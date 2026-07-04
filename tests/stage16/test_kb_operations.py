@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.db.session import AsyncSessionLocal, dispose_engine
+from app.repositories.kb_chunk_repository import kb_chunk_repository
 from app.repositories.kb_document_repository import kb_document_repository
 from app.services.kb_operations_service import kb_operations_service
 
@@ -122,6 +123,21 @@ async def test_reject_keeps_live(_svc):
         d = await kb_operations_service.reject(s, TENANT, doc_id, reviewer="bob", note="待核实")
         await s.commit()
         assert d.status == "draft" and await _is_live(s, doc_id)  # 线上仍旧版本
+
+
+async def test_keyword_search_uses_stage16_live_predicate(_svc):
+    """关键词召回应按 Stage 16 生效判据召回 published 文档。"""
+    async with AsyncSessionLocal() as s:
+        doc = await kb_operations_service.create_draft(
+            s, TENANT, title="关键词召回", raw_content="# 售后暗号\n\n海盐芝士凭证可用于售后核验。"
+        )
+        doc_id = doc.id
+        await kb_operations_service.submit_review(s, TENANT, doc_id)
+        await kb_operations_service.approve(s, TENANT, doc_id)
+        await s.commit()
+
+        hits = await kb_chunk_repository.search_by_keywords(s, TENANT, ["海盐芝士"], limit=5)
+        assert any(chunk.document_id == doc_id for chunk, _score in hits)
 
 
 # ---------------------------------------------------------------------------

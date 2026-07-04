@@ -77,8 +77,9 @@ class KbChunkRepository(BaseRepository[KbChunk]):
     ) -> list[tuple[KbChunk, int]]:
         """关键词召回：任一关键词 ILIKE 命中即入候选，按命中词数降序。
 
-        只召回 status=active 文档下的分块（停用文档的分块保留在 PG 供审计，
-        但不参与检索）。返回 (chunk, 命中词数)。
+        只召回线上生效文档下的分块（Stage 16 后生效判据为
+        published_version 非空且未 archived；编辑已发布文档时 status 可回到 draft，
+        但旧版分块仍应继续服务线上检索）。返回 (chunk, 命中词数)。
         """
         if not keywords:
             return []
@@ -88,7 +89,9 @@ class KbChunkRepository(BaseRepository[KbChunk]):
             .join(KbDocument, KbDocument.id == KbChunk.document_id)
             .where(
                 KbChunk.tenant_id == tenant_id,
-                KbDocument.status == "active",
+                KbDocument.tenant_id == tenant_id,
+                KbDocument.published_version.isnot(None),
+                KbDocument.status != "archived",
                 or_(*conditions),
             )
             .limit(limit * 3)  # 取宽一点，Python 层按命中词数重排后再截断
