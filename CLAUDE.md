@@ -1,0 +1,132 @@
+# CLAUDE.md
+
+本文件是 Claude Code 在本仓库工作的入口规则。`AGENTS.md` 是面向所有 AI/Codex 的全局规则，**本文件与其一致，冲突时以 `AGENTS.md` 与 `docs/` 阶段需求文档为准**。
+
+## 项目简介
+
+`ai-cs-platform`：基于 **FastAPI + LangChain + LangGraph + PostgreSQL + Redis** 的 AI 客服聊天系统。当前处于早期阶段，按 Stage 分阶段推进，不要跨阶段超范围实现。
+
+## 必读顺序（写代码前）
+
+1. `AGENTS.md`（全局规则与禁止事项）
+2. `docs/00_docs_management_standard.md`、`docs/README.md`
+3. `docs/architecture/roadmap.md`（总体路线图 Stage 01-09）、`docs/architecture/system_overview.md`（分层架构与主链路）
+4. `docs/chat/intent_taxonomy.md`（意图体系规范——意图码/优先级/风险等级的**单一事实来源**，改意图必先改它）
+5. 本次任务对应的阶段需求文档 `docs/requirements/stage-xx-*/`
+
+## 阶段进度
+
+- **Stage 01 基础框架** —— ✅ 已实现（FastAPI / 配置 / 日志 / 异常 / 统一响应 / PG async / Redis async / Health API / Alembic 基础）
+- **Stage 02 聊天核心表** —— ✅ 已实现（`chat_session` / `chat_message` / `chat_dialog_state` / `chat_decision_log`，`app/models/` Models、`app/repositories/` Repository、Alembic migration；JSONB 字段、`tenant_id`、复合索引、dialog_state 乐观锁 version）
+- **Stage 03 聊天主链路** —— ✅ 已实现，2026-07-02 完成 v2 修订（确认门闭环 META.CONFIRM/DENY、ORDER.CANCEL、会话归属校验、JSONB 变更追踪、并发冲突 409、失败轮次独立事务留痕；修订清单见 stage-03 文档附录）
+- **Stage 04 LLM 接入** —— ✅ 已实现（2026-07-02）：**04-02** SetFit 语义分类（三层混合：规则控制层→SetFit 29 类→降级规则，`INTENT_CLASSIFIER=rule|hybrid`，训练数据 `docs/intent/intent_train_v42_project.csv`，test acc 0.94）；**04-01** LLM Provider 工厂（`app/chat/llm/factory.py`，timeout/降级统一收口）、LLM 难例二判（SetFit 低置信才调用，意图目录从 `catalog.py` 程序化生成）、LLM 槽位兜底（规则优先只补空缺）、LLM 回复润色（仅 DONE/FALLBACK，数字事实校验违规回退底稿；补槽/确认门保持模板）、会话创建 `POST /api/chat/sessions` 与历史分页 API、意图评估门禁（`tests/eval/`）。**所有 LLM 路径在 OPENAI_API_KEY 为空时自动降级**。db_session 已迁出 GraphState（config 注入，state 可序列化）。遗留：流式 SSE、真实 LLM 端点联调
+- **Stage 05 工具层与确认门闭环** —— ✅ 已实现（2026-07-02）：Skill Loader（31 个技能 md 能力声明双源合并进注册表 + 启动校验，`SKILL_LOADER_STRICT`）；ToolProvider 协议 + MockToolProvider（确定性假数据，`TOOL_PROVIDER=mock`）；**ActionExecutor 唯一写入口**（三重校验+防重放+独立事务 EXECUTING 标记，确认→执行→工单号回执）；ConfirmationResponseParser（含糊应答 LLM 解析 CONFIRM/DENY/MODIFY/UNRELATED，无 Key 降级规则）；chat_task/chat_tool_call 审计表（save_turn 统一同步任务行）；任务挂起/恢复（task_stack 启用 + 上下文槽位继承 + 自动续办提示）；tool_invoke 节点（订单/物流查询返回 mock 事实数据，失败按 R4 走 rag_fallback）。图为 8 线性节点 + 5 回复分支
+- **Stage 06 RAG/FAQ/向量库** —— ✅ 已实现（2026-07-02，提前于 04/05 落地）：向量库用 **Milvus**（`VectorStoreBackend` 抽象，pgvector/ES 为后续可选后端）；PG 为知识库唯一事实来源（kb_document/kb_chunk/faq_entry，embedding 存 JSONB）；FAQ 精确层 + 混合检索（Milvus 向量 + jieba 关键词 RRF）；拒答不编造、检索轨迹落 decision_log.retrieval_json；`rag_answer` 节点条件路由接入主链路（FAQ.GENERAL 意图 / UNKNOWN 兜底）；LLM 生成路径已预留（无 Key 时 FAQ 标准答案 + 摘录式回答离线运行）；`python -m app.kb.reindex` 从 PG 重建索引
+- **Stage 06-02 文档解析管道** —— ✅ 已实现：解析器链（MinerU HTTP → Docling → 内置）支持 pdf/docx/xlsx/md/txt，统一 Block IR；**结构感知切分**（标题路径注入每个 chunk、表格独立成块+大表分片重复表头、图片 caption+邻近正文合块、碎片合并）；`POST /api/kb/documents/upload` 文件入库
+- **Stage 06-03 检索路由与商品库** —— ✅ 已实现：检索路由矩阵 R1-R5（按意图×对话状态路由，补槽/确认门轮次不检索）；`ProductProvider` 协议 + 本地商品表（product_item）；`product_answer` 节点：商品意图商品库优先（**价格/库存禁走 RAG**，红线）、多命中列候选、无命中宁缺勿编、ASK_INFO 叠加 RAG 增强
+- **Stage 06-04 检索管道 v2** —— ✅ 已实现（2026-07-03）：query 归一化（`app/kb/query_normalize.py`：繁简转换/同义词扩展只进关键词路/型号识别→precise|semantic 判型）；多路宽召回（`RAG_RECALL_TOP_K`）+ **动态加权 RRF**（精确查询关键词路提权——型号/单号向量不可靠）；可选 **CrossEncoder 重排**（`RERANKER_PROVIDER=off|local`，失败降级）；**父子分块**（kb_chunk.section_path，命中子块聚合章节兄弟块为 section_context，行级去重）；歧义检测（top1/top2 分差小且异文档→摘录附提示）。多意图切分器评估集 `tests/eval/test_multi_intent_eval.py`（12/13）；分类器训练数据结论：分段即单意图，无需改动（intent README 4.5 节）
+- **Stage 07 人工接管与工单** —— ✅ 已实现（2026-07-03）：`chat_handoff_ticket` 工单表（部分唯一索引承载「同会话一张未关闭工单」幂等，context_json 上下文移交包：任务栈/槽位/最近消息脱敏快照）；**bot 静默修复**（`chat_session.status=handoff` 时 load_session_state 意图分类前短路，回复固定等待话术，消息照常落库 status=HANDOFF_SILENT；guardrail_check 对静默轮次透传防覆盖）；五类触发收口（save_turn：USER_REQUEST / PAYMENT_ISSUE / REPEATED_UNKNOWN——连击计数存 context_stacks_json、阈值 `HANDOFF_UNKNOWN_STREAK`；action_execute：EXECUTION_FAILED；tool_invoke：SKILL_RULE 按技能 requires_human_if 声明），建单轮决策日志记录 reason+ticket_id；坐席 API `app/api/routes/handoff.py`（admin scope：队列分页/详情含 context/claim 条件更新防并发抢单 409/reply 写 role=agent 消息/resolve 归还会话+状态机复位 IDLE）。遗留：坐席实时推送、CLOSED 状态 API
+- **Stage 08 鉴权与多租户加固** —— ✅ 已实现（2026-07-02，生产门槛达成）：API Key per tenant（`Authorization: Bearer ak_xxx.sk_yyy`，bcrypt 哈希存储 + TTL 缓存，密钥 CLI `scripts/manage_api_keys.py`）；scope 分离（chat/admin）；`AUTH_ENABLED=true` 时 tenant_id 一律凭证解析（请求体忽略）、session 强制服务端发号；限流（租户+会话级滑动窗口，429+Retry-After，Redis 故障放行）；`Idempotency-Key` 幂等；trace 中间件化（X-Trace-Id）；请求体限长 413。开发模式（默认）零回归
+- **Stage 09 可观测与评估平台** —— ✅ 已实现（2026-07-03）：Prometheus 指标 9 个（`app/core/metrics.py` 单一注册点 + `GET /metrics`；多租户不进 label，直方图用意图域控基数）；质量看板（`quality_daily` 物化视图 + `docs/ops/quality_queries.md` 8 组可执行 SQL + `scripts/refresh_quality_views.py`）；数据回流（`scripts/export_review_set.py` review/faq 两模式：低置信/LLM 二判/FALLBACK/差评轮次导出→人工审核→`build_intent_dataset.py --extra` 合并重训；去重/脱敏/排除已入训练集，`data/export/` 不进 git）；`chat_feedback` 表 + `POST /api/chat/sessions/{id}/feedback`（会话+消息双归属校验防投毒，重复评价幂等更新）；CI 门禁 `.github/workflows/ci.yml`（ruff/mypy/pytest -rs，eval skip 显式可见）；决策回放 `scripts/replay_trace.py --trace|--session`。**同期散件**：流式 SSE `POST .../messages/stream`（meta/delta/done/error 事件，协议见 chat_api.md 第 7 节）；RAG 评估集 32 组（`docs/testing/rag_eval_set.md` 用例表 + `tests/eval/test_rag_eval.py` harness 解析执行，阈值双档 hash 0.75/0.80 实测通过）；`docker-compose.yml`（PG+Redis 默认，`--profile kb` 加 Milvus standalone）。遗留：Grafana 看板、SetFit CI 门禁需带模型 runner、RAG 高档门禁待真实 embedding
+- **Stage 11 MCP 工具服务与集成** —— ✅ 已实现（2026-07-03）：订单/物流查询以 **MCP 标准工具服务**提供（`scripts/run_mcp_server.py`，FastMCP streamable-http :8400/mcp，数据源与进程内 mock 共享 `mock_data.py` 可对拍）；`McpToolProvider`（`TOOL_PROVIDER=mcp`）：list_tools 动态发现（失败缓存带 60s TTL 自动恢复接管）、服务未覆盖工具（写操作）回落 mock、调用失败/服务不可达回落 mock 并打 `degraded` 标记；聊天链路与审计表零改动（Stage 05 抽象层验证）。对接真实业务系统只需替换 MCP 服务端工具函数内部
+- **Stage 12 Langfuse 链路追踪** —— ✅ 已实现（2026-07-03）：`app/core/tracing.py` 工厂+降级；LangChain CallbackHandler 挂 LangGraph run config（节点 span + LLM prompt/token 自动捕获，节点代码零改动）+ `chat_completion` 收口；trace 关联 session/user/tenant/业务 trace_id；`LANGFUSE_ENABLED/PUBLIC_KEY/SECRET_KEY/HOST` 配置，**无 Key/SDK 失败/服务不可达一律静默降级**；lifespan 关停 flush。与 Prometheus 互补：指标管聚合告警，Langfuse 管单次调用链路明细
+- **Stage 13 生产加固** —— ✅ 已实现（2026-07-03，审计整改三批全部完成）：生产配置硬门禁（`APP_ENV=prod` 时 AUTH/DEBUG/hash embedding/弱口令缺项**拒绝启动**）；**管理面强制 token**（开发模式空 `KB_ADMIN_TOKEN` 不再放行，联调需在 .env 配置）；ActionExecutor 防重放原子化（`claim_for_execution` 条件 UPDATE，并发确认恰好执行一次，无 task_id 拒绝）；MCP 失败禁 mock 冒充事实（`TOOL_MCP_FALLBACK=fail` 默认，UPSTREAM_UNAVAILABLE 走既有失败分支；写操作恒走 mock）；幂等加固（显式 commit 后写缓存 + SET NX 在途锁 409 + body 指纹 422）；API Key 即时吊销（Redis 版本广播 + LRU 缓存 + 假 bcrypt 拉平耗时 + expires_at）；Prometheus 多进程（`PROMETHEUS_MULTIPROC_DIR`）；L3 弱确认收紧（「好的」→「请回复『确认』」重确认）；脱敏扩展（地址打码 + decision_log 落库脱敏）；建单 SAVEPOINT 防事务污染；FAQ needs_reindex；启动 DB 探活；SKILLS_DIR/模型路径锚定仓库根；限流先判后写。migration `504825e337b1`
+- **Stage 14 内容安全护栏** —— ✅ 已实现（2026-07-04）：规则库在 `docs/chat/skills_design/guardrails.md`【机器可读规则库】表格（**单一事实来源**，改规则改表格；injection 正则/abuse_severe 词表/emotion_negative flag/output_leak 四类），`app/chat/guardrail/`（lexicon 解析 + engine 引擎，规则损坏/Redis 故障一律 fail-open）；`guardrail_check` 实装：注入拦截固定话术、重度违禁连击 `GUARDRAIL_ABUSE_STREAK=2` 次→ABUSE 工单+会话静默（计数走 Redis 不触碰 dialog_state——拦截轮不动状态机的 v2 语义）、轻度情绪 flag→润色 soften、同文本连发 `GUARDRAIL_REPEAT_LIMIT=3` 次拦截；`app/chat/llm/prompt_guard.py::wrap_user_input()` 防注入收口全部 5 个 LLM 拼接点（二判/槽位/润色/确认门解析/RAG 生成/记忆抽取）+ RAG system 硬约束；输出护栏 `check_output`（润色违规回退底稿、RAG 弃生成走摘录、记忆摘要/事实写入前过滤）；`guardrail_blocks_total{rule}` 指标 + 决策日志 graph_trace_json.guardrail 留痕；训练语料 500 条零误拦扫描做回归防线。遗留：GUARDRAIL_PROVIDER=external 扩展位、词表运营扩充
+- **Stage 15 体验闭环** —— ✅ 已实现（2026-07-04）：**WS 双端实时**（`app/api/routes/ws.py` + `app/services/notify_service.py` WsHub——用户端 `WS /api/chat/sessions/{id}/ws` 收 agent_reply/session_resumed/proactive，坐席端 `WS /api/handoff/ws` 收 ticket_created/user_message；Redis Pub/Sub 跨进程广播、故障回落本进程直投、断线即弃重连拉历史；鉴权 verify_bearer_token 共用，开发模式 query 参数）；**CSAT**（chat_csat 表 + `app/chat/csat.py` 严格解析防误吞；resolve/会话关闭发询问置 csat_pending，评分回复 load_session_state 短路捕获→save_turn 落库清标记，非评分一次性失效；quality_daily 加 csat_avg/csat_count，低分≤2 进回流导出）；**会话生命周期**（`scripts/close_idle_sessions.py` cron：空闲关闭+CSAT 询问、ASSIGNED 超时 CLOSED+会话归还——补 Stage 07 遗留；closed 会话来消息自动重开、任务不复活）；排队位置反馈（建单回复附「排队第 N 位」）；主动消息 `POST /api/chat/sessions/{id}/notify`（admin scope）。migration `b546c33dea6f`。遗留：坐席工作台前端、WS 心跳/连接数走网关层。更远 backlog（多渠道/知识库后台/多模态/多语言/成本控制/A B 实验）见 roadmap 3.6
+- **Stage 16 知识库运营后台** —— ✅ 已实现（2026-07-05）：`kb_document` 加 `published_version`/`effective_from`/`expire_at`；`kb_document_version` 版本表 + `kb_operations_service`（草稿-审核-发布状态机 draft/pending_review/published/archived）；**生效判据 = published_version 非空且未 archived**（不单看 status——编辑已发布文档 status 回 draft 但 published_version 不变，线上仍服务旧版本，直到再发布）；版本回滚、审核流（动作落 metadata_json.review_log）、发布复用 `upsert_document` 重建索引；`scripts/kb_schedule.py` 定时生效/失效 cron；`docs/ops/kb_quality_queries.md` 命中率/盲区 SQL（decision_log 聚合）；`routes/kb.py` 扩 8 个运营 API（admin scope）。migration `3a1e7630141b`。219 tests 零回归（基准 213+6）+ 真实 Milvus e2e。遗留：运营前端、角色细分（预留 kb_editor/kb_reviewer）
+- **Stage 17 LLM 成本控制** —— 📝 需求已写：`docs/requirements/stage-17-llm-cost-control/`——语义缓存（同问直答，事实类禁缓存红线，不依赖真实 LLM）、租户 token 预算与熔断（超限降级模板）、模型分级路由（简单轮走小模型）
+- **Stage 18 A/B 实验框架** —— 📝 需求已写：`docs/requirements/stage-18-ab-experiments/`——确定性 hash 分桶、变体只覆盖已有可配项、decision_log 落变体、按变体切分 quality_daily 对比（框架可落地，显著性结论待真实流量）
+- **Stage 19 多语言地基（i18n）** —— ✅ 已实现（2026-07-04）：`app/core/i18n.py`（`t(key, locale, **params)`/`skill_template`/`resolve_locale`，缺 key 回退默认语言）+ `app/locales/`（zh 源逐字对齐现有文案=**零回归**、en 骨架示范）；面向用户确定性文案全部收口 `t()`（responder/guardrail/response_generate/save_turn/action_execute/product_answer/handoff/close_idle）；skill 模板语言覆盖（registry 中文=zh 源不动，非默认语言查 `skill.<id>.<key>` 覆盖）；LLM 提示词加「回复语言与用户消息一致」（**不翻译提示词**，模型自答）；locale 贯穿（请求 `ChatMessageRequest.locale`＞会话 metadata 记忆＞`LOCALE_DEFAULT`，`load_session_state` 决策并写入 metadata 供后续轮沿用）。全量 213 tests 零回归 + e2e（en/zh 护栏话术、locale 记忆）验证。做语言=加 `app/locales/xx.py`+skill md `templates.xx`。遗留：输入理解侧（意图分类多语言训练集、护栏词表/槽位正则）、skill.name 多语言、自动语言检测
+- **Stage 10 多意图/任务治理/记忆** —— ✅ 已实现（2026-07-03）：**多意图**（`app/chat/intent/multi_intent.py`：并列标记分段+每段独立分类抽槽防串槽，次要意图入任务栈自动续办；恢复即完成的读任务提示「回复继续」触发执行）；**任务治理**（`TASK_TTL_MINUTES` 过期任务不复活、`TASK_MAX_ASKS` 追问超限放弃+转人工建议）；**记忆系统**（`app/chat/memory/`：MemoryProvider 协议，`MEMORY_PROVIDER=local|mem0|off`——local=短期窗口+LLM 会话摘要（存 chat_session.metadata_json）+长期事实（user_memory 表）；mem0=长期记忆托管 mem0（Milvus collection），无 Key/未装包自动降级 local；注入 LLM 润色与 RAG 生成，写入轮后异步 best-effort）。修复：chat_message.created_at 改 clock_timestamp()（同事务消息排序稳定）
+- **Stage 17 LLM 成本控制** —— ✅ 已实现（2026-07-04）：三块可独立开关、独立降级、**默认全关=零回归**。**分级路由**（`factory._model_for_purpose`：classify 走 `CHAT_MODEL_FAST`、generate 走 `CHAT_MODEL_SMART`，留空逐级回落 `CHAT_MODEL`；RAG 生成走 smart）；**租户 token 预算熔断**（`app/chat/llm/budget.py`：租户 contextvar 入口注入 + Redis 按日 INCRBY 累计 + `is_over_budget`，达日预算后 `chat_completion` 与 RAG 生成双收口降级模板——与无 Key 同路径；usage 从 provider `usage_metadata` 取，`account_llm_result` 计指标+累计）；**语义缓存**（`app/chat/cache/semantic_cache.py`：`SemanticCacheProvider` 协议 + Redis 每租户封顶列表 + Python cosine，复用 `embedding_client`；只缓存无副作用来源白名单 `faq/rag_llm/rag_extract/chitchat`——**价格/库存/订单事实永不缓存**；接入 `rag_answer` 命中短路，KB publish 后按租户失效；后端故障 fail-open）。指标：`llm_tokens_total`/`llm_budget_exceeded_total`/`semantic_cache_total`。遗留：真实 embedding 泛化标定阈值、闲聊节点接入、月度预算窗口
+- **Stage 18 A/B 实验框架** —— ✅ 已实现（2026-07-04）：`app/experiments/`（config JSON 配置按 mtime 缓存 + resolver 确定性分桶）；**分桶** `md5(exp:tenant:session)%100`（不用内置 hash 防 PYTHONHASHSEED 随机化，多进程一致、同会话稳定同变体）；**白名单** `OVERRIDABLE_PARAMS`（仅 RAG_MIN_SCORE/FAQ_HIT_THRESHOLD/RAG_RECALL_TOP_K/RERANKER_PROVIDER，配置解析层过滤非白名单键——实验只调参数不引新代码分支）；**参数注入** `set_overrides` 写 contextvar → 消费点经 `effective(name)` 读（覆盖优先否则回落 settings，改了 kb/retriever·answerer·rerank 4 处）；图入口 `chat_service` 收口 `resolve_experiment`→注入+落 `chat_decision_log.experiment_json`（migration `a7c2f1e9d3b4`）；对比 SQL `docs/ops/experiment_queries.md`（按变体切 done/handoff/refused/P95/CSAT+两比例 z 近似，**显著性结论留运营**）；CLI `scripts/experiments.py list|bucket|sample`。配置缺失/损坏/作用域外/stopped 一律 fail-open 走 control。遗留：意图域作用域（入口先于分类，v1 仅记录）、配置改 DB+前端
+
+## 目录结构
+
+```text
+app/
+  main.py              # FastAPI 入口、lifespan 资源管理（Redis/DB 探活/WS 枢纽/Langfuse flush）、路由注册
+  api/routes/          # 接入层，只接参数/调用 service/返回响应
+    health.py          # GET /api/health、/api/health/ready
+    chat.py            # 发消息 / SSE 流式 / 会话创建 / 历史分页 / feedback / notify（主动消息）
+    handoff.py         # 坐席工单 API：队列/详情/claim/reply/resolve（admin scope，Stage 07）
+    ws.py              # WS 双端实时通道（用户端 + 坐席端，Stage 15）
+    kb.py / product.py # 知识库 / 商品管理面（admin scope）
+    metrics.py         # GET /metrics（Prometheus，Stage 09）
+  schemas/chat.py      # Chat API 请求/响应 Pydantic 模型
+  services/
+    chat_service.py    # 应用服务层：协调 Repository + LangGraph 图 + 指标/追踪/记忆/反馈
+    handoff_service.py # 转人工闭环：幂等建单/上下文移交包/坐席操作/CSAT 询问（Stage 07/15）
+    notify_service.py  # WsHub：WS 连接枢纽 + Redis Pub/Sub 跨进程广播（Stage 15）
+  core/                # config(生产硬门禁) / logging / exceptions / responses / auth(API Key+吊销)
+                       # rate_limit / idempotency(在途锁+指纹) / metrics(Prometheus) / tracing(Langfuse)
+  db/                  # base.py(Declarative Base + Mixin，末尾导入 models 供 autogenerate)、session.py(async engine/池)
+  cache/redis_client.py# 全局 async Redis client，startup/shutdown 管理
+  models/              # ORM：chat_session/message/dialog_state/decision_log/task/tool_call/
+                       # handoff_ticket/feedback/csat/api_credential/kb_*/faq_entry/product_item/user_memory
+  repositories/        # 数据访问层，BaseRepository + 各表 repository（只做 CRUD，不写业务）
+  chat/                # 聊天主链路
+    graph/             # LangGraph：state.py / builder.py / nodes/（8 线性节点 + 5 回复分支，见 system_overview 第 4 节）
+    guardrail/         # 内容安全护栏：lexicon(规则库解析) + engine(注入/违禁/灌注/输出检查，Stage 14)
+    tools/             # ToolProvider 协议 + mock / MCP 客户端（TOOL_MCP_FALLBACK 降级策略，Stage 05/11/13）
+    actions/           # ActionExecutor（唯一写入口，原子拿执行权防重放，Stage 05/13）
+    confirmation/      # 确认门含糊应答 LLM 解析（Stage 05；L3 弱确认收紧在 confirmation_parse 节点）
+    intent/            # 混合分类器：规则控制层 + SetFit + LLM 二判 + 多意图切分（Stage 03/04/10）
+    slots/             # SlotExtractor + 正则 patterns + LLM 兜底
+    state/             # DialogStateManager 状态机
+    skills/            # SkillRegistry 能力声明 + responder 模板回复 + llm_responder 润色
+    memory/            # MemoryProvider 协议：local(窗口/摘要/长期事实) + mem0（Stage 10）
+    cache/             # 语义缓存：SemanticCacheProvider 协议 + Redis 实现（同问直答，Stage 17）
+    logging/           # DecisionLogger 决策日志落库（落库前脱敏）
+    llm/               # factory(统一收口+timeout+降级+分级路由) / budget(租户预算熔断) / prompts / prompt_guard(防注入包裹，Stage 14/17)
+    csat.py            # CSAT 评分解析（Stage 15）
+  kb/                  # Stage 06 知识库：chunker/embedding/ingest/retriever/answerer/reindex/query_normalize
+    backends/          # VectorStoreBackend 协议 + Milvus 实现 + factory
+    parsing/           # 文档解析：Block IR + MinerU(HTTP)/Docling/内置解析器 + 格式路由
+  product/             # 商品库：ProductProvider 协议 + 本地实现（价格/库存唯一事实源）
+  experiments/         # A/B 实验：config(JSON 加载) + resolver(确定性分桶+白名单参数注入，Stage 18)
+alembic/               # 异步迁移，env.py 从 settings 读取 DATABASE_URL
+scripts/               # 训练/密钥/DDL 导出/回流导出/回放/看板刷新/生命周期/MCP 服务
+tests/                 # 按 stage 分目录 + eval 评估门禁（意图/多意图/RAG）
+docs/                  # 需求、架构、API、数据库、测试、运维文档（按阶段拆分）
+sql/ddl/               # 建表 SQL（scripts/export_table_ddl.py 生成物，勿手改）
+```
+
+## 常用命令
+
+```bash
+uv sync                                      # 安装依赖
+uv run uvicorn app.main:app --reload         # 启动服务
+curl http://localhost:8000/api/health        # 健康检查
+uv run alembic revision --autogenerate -m "msg"  # 生成迁移
+uv run alembic upgrade head                  # 执行迁移
+uv run ruff check app alembic                # 代码检查
+uv run mypy app                              # 类型检查
+uv run pytest                                # 测试
+uv run python scripts/build_intent_dataset.py   # 构建意图训练集 v42（v41→taxonomy 映射+FAQ 生成）
+uv run python scripts/train_setfit_intent.py    # 训练 SetFit 意图分类器（产物 models/intent_setfit_v1）
+uv run python -m app.kb.reindex --tenant t1     # 从 PG 重建 Milvus 向量索引
+uv run python scripts/export_table_ddl.py       # 从模型导出建表 SQL（sql/ddl/，生成物勿手改）
+uv run python scripts/refresh_quality_views.py  # 刷新质量看板物化视图（quality_daily）
+uv run python scripts/export_review_set.py --tenant t1           # 回流待审样本导出（--mode faq 为 FAQ 沉淀）
+uv run python scripts/replay_trace.py --trace <id> | --session <id>  # 决策回放
+docker compose up -d                            # 起 PG+Redis（--profile kb 加 Milvus）
+```
+
+> 本地依赖 PostgreSQL 与 Redis（必需）、Milvus 2.5+（Stage 06 知识库，可用 `KB_ENABLED=false` 关闭），启动方式见 `docs/ops/local_dev_and_runbook.md`。配置复制 `.env.example` 为 `.env`，`DATABASE_URL` 必须用 `postgresql+asyncpg://` 前缀。开发模式 `EMBEDDING_PROVIDER=hash` 时需降低检索阈值（FAQ_HIT_THRESHOLD=0.6、RAG_MIN_SCORE=0.2）。知识库索引重建：`uv run python -m app.kb.reindex --tenant <id>`。
+
+## 代码约定（强约束）
+
+- 核心类、核心方法、复杂逻辑必须有**中文注释**。
+- route 只做接入，业务逻辑放 Service / 决策层，不要堆进 route。
+- 数据库地址、Redis 地址、API Key **禁止写死**，统一走 `app/core/config.py` 的 `settings`。
+- 日志**禁止打印**明文 API Key、手机号、地址、订单等敏感信息。
+- 所有外部访问（DB / Redis / LLM）必须有 **timeout**；连接资源必须支持**优雅关闭**。
+- 所有异常必须记录日志并返回**统一响应结构**（`app/core/responses.py`）。
+- DB engine / Redis client 全局复用，**不要每次请求新建**。
+- 写操作必须预留**确认门**，禁止让 LLM 直接执行退款 / 取消 / 改地址等。
+- 严格按阶段需求文档执行，**不跨阶段**擅自实现 RAG / FAQ / 向量库 / 真实工具。
+
+## 技术栈约束
+
+Python 3.12（uv pin）、uv 包管理、SQLAlchemy 2.x async + asyncpg、Alembic、redis.asyncio、Pydantic v2 + pydantic-settings。

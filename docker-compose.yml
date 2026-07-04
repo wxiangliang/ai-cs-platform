@@ -1,0 +1,74 @@
+# 本地开发依赖（docs/ops/local_dev_and_runbook.md 第 1 节）：
+#   docker compose up -d                 # PG + Redis（全阶段必需）
+#   docker compose --profile kb up -d    # 加 Milvus（Stage 06 知识库；不起则 KB_ENABLED=false）
+# 连接串与 .env.example 默认值对齐。
+services:
+  postgres:
+    image: postgres:16
+    container_name: ai-cs-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_cs_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: ai-cs-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Milvus 单机版（内嵌 etcd + 本地存储，无需 minio）。
+  # 需要先生成 embedEtcd.yaml（见 runbook 第 1 节），或直接用下面的 command 生成后启动。
+  milvus:
+    profiles: ["kb"]
+    image: milvusdb/milvus:v2.5.10
+    container_name: ai-cs-milvus
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      COMMON_STORAGETYPE: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /milvus/configs/embedEtcd.yaml <<'YAML'
+        listen-client-urls: http://0.0.0.0:2379
+        advertise-client-urls: http://0.0.0.0:2379
+        quota-backend-bytes: 4294967296
+        auto-compaction-mode: revision
+        auto-compaction-retention: '1000'
+        YAML
+        exec milvus run standalone
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_kb_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pg_data:
+  redis_data:
+  milvus_kb_data:

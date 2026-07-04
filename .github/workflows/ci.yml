@@ -1,0 +1,65 @@
+# CI 门禁（Stage 09）：ruff + mypy + pytest（含 tests/eval 评估门禁）。
+#
+# 说明：
+# - PG / Redis 用 service 容器；Milvus 不起（KB_ENABLED=false 时知识库离线降级，
+#   相关用例走 hash embedding + PG 关键词路，不依赖向量服务）；
+# - SetFit 模型产物（models/intent_setfit_v1）不进 git：eval 门禁在无产物时
+#   显式 skip（pytest -rs 输出可见，不允许静默当作通过）；有模型缓存的
+#   self-hosted runner 上会真实执行 acc>=0.90 门禁。
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ai_cs
+          POSTGRES_PASSWORD: ai_cs
+          POSTGRES_DB: ai_cs
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ai_cs" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://ai_cs:ai_cs@localhost:5432/ai_cs
+      REDIS_URL: redis://localhost:6379/0
+      KB_ENABLED: "false"
+      EMBEDDING_PROVIDER: hash
+      MEMORY_PROVIDER: "off"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check app tests scripts
+
+      - name: Type check (mypy)
+        run: uv run mypy app
+
+      - name: Migrate
+        run: uv run alembic upgrade head
+
+      - name: Test (pytest, -rs 让 eval 门禁的 skip 显式可见)
+        run: uv run pytest tests -q -rs
