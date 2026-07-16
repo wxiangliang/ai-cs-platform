@@ -8,6 +8,10 @@ import pytest
 from app.chat.memory.base import MemoryContext
 from app.chat.memory.factory import get_memory_provider
 from app.chat.memory.local_provider import local_memory_provider
+from app.chat.memory.scheduler import (
+    enqueue_memory_after_commit,
+    wait_pending_memory_tasks,
+)
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal, dispose_engine
 from app.repositories.chat_message_repository import chat_message_repository
@@ -94,3 +98,93 @@ def test_factory_mem0_degrades_without_key(monkeypatch):
 def test_memory_context_roundtrip():
     ctx = MemoryContext(session_summary="s", recent_turns=[("user", "hi")], long_term_facts=["f"])
     assert MemoryContext.from_dict(ctx.to_dict()) == ctx
+
+
+async def test_memory_runs_only_after_commit_and_sees_current_turn(
+    monkeypatch, _seeded_session
+):
+    """提交前不执行；提交后新事务能读到本轮已落库消息。"""
+    tenant, user, sid = _seeded_session
+    seen_counts: list[int] = []
+
+    class InspectProvider:
+        async def remember(self, *args, **kwargs) -> None:
+            async with AsyncSessionLocal() as read_session:
+                messages = await chat_message_repository.list_by_session_id(
+                    read_session, tenant, sid, limit=20
+                )
+                seen_counts.append(len(messages))
+
+    monkeypatch.setattr(settings, "MEMORY_PROVIDER", "local")
+    monkeypatch.setattr(
+        "app.chat.memory.factory.get_memory_provider", lambda: InspectProvider()
+    )
+
+    async with AsyncSessionLocal() as session:
+        await chat_message_repository.create(
+            session,
+            tenant_id=tenant,
+            session_id=sid,
+            role="user",
+            content="本轮新消息",
+        )
+        enqueue_memory_after_commit(
+            session,
+            tenant_id=tenant,
+            user_id=user,
+            session_id=sid,
+            user_text="本轮新消息",
+            reply="本轮回复",
+            intent="FAQ.GENERAL",
+        )
+        assert seen_counts == []
+        await session.commit()
+
+    await wait_pending_memory_tasks()
+    assert seen_counts == [5]
+
+
+async def test_memory_is_discarded_after_rollback(monkeypatch, _seeded_session):
+    """聊天主事务回滚时不允许产生长期记忆副作用。"""
+    tenant, user, sid = _seeded_session
+    provider = AsyncMock()
+    monkeypatch.setattr(settings, "MEMORY_PROVIDER", "local")
+    monkeypatch.setattr("app.chat.memory.factory.get_memory_provider", lambda: provider)
+
+    async with AsyncSessionLocal() as session:
+        enqueue_memory_after_commit(
+            session,
+            tenant_id=tenant,
+            user_id=user,
+            session_id=sid,
+            user_text="不会提交",
+            reply="不会落库",
+            intent="FAQ.GENERAL",
+        )
+        await session.rollback()
+
+    await wait_pending_memory_tasks()
+    provider.remember.assert_not_awaited()
+
+
+async def test_memory_off_does_not_register_commit_task(monkeypatch, _seeded_session):
+    """MEMORY_PROVIDER=off 时提交也不触发 Provider。"""
+    tenant, user, sid = _seeded_session
+    provider = AsyncMock()
+    monkeypatch.setattr(settings, "MEMORY_PROVIDER", "off")
+    monkeypatch.setattr("app.chat.memory.factory.get_memory_provider", lambda: provider)
+
+    async with AsyncSessionLocal() as session:
+        enqueue_memory_after_commit(
+            session,
+            tenant_id=tenant,
+            user_id=user,
+            session_id=sid,
+            user_text="关闭记忆",
+            reply="不会记录",
+            intent="FAQ.GENERAL",
+        )
+        await session.commit()
+
+    await wait_pending_memory_tasks()
+    provider.remember.assert_not_awaited()

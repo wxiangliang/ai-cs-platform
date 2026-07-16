@@ -76,7 +76,9 @@ class MemoryProvider(Protocol):
 
 - LLM 回复润色（llm_responder）：摘要 + 近期轮次 + 长期事实进 prompt（此前 history 为空）；
 - RAG 生成（answerer）：注入长期事实（如用户已说明的商品型号偏好）；
-- 记忆写入：ChatService 在成功轮次后 `asyncio.create_task` 异步执行，绝不阻塞响应。
+- 记忆写入：ChatService 在成功轮次登记提交后任务，只有聊天主事务 `commit` 成功后才
+  `asyncio.create_task` 异步执行；事务 `rollback` 时丢弃，避免生成未落库轮次的幽灵记忆，
+  同时保证摘要查询能读到本轮消息。记忆失败仍只记日志，绝不阻塞响应。
 
 ## 4. 不做什么
 
@@ -118,8 +120,8 @@ class MemoryProvider(Protocol):
    - Mem0MemoryProvider：长期记忆托管 mem0（add/search，Milvus 独立 collection、
      OPENAI_* 配置），短期复用本地；未装包/无 Key 自动降级 local 并告警；
    - 注入点：LLM 回复润色（摘要+近期轮次+长期事实）、RAG 生成（长期事实，
-     标注「仅供表达贴合」防把记忆当新事实）；写入在 ChatService 轮后 asyncio.create_task
-     异步 best-effort。
+     标注「仅供表达贴合」防把记忆当新事实）；写入由 ChatService 登记为 after-commit
+     异步 best-effort，主事务回滚不写记忆。
 4. **新表** user_memory（migration `d7395298fab5`）。
 
 ### 过程中发现并修复的真实 bug
@@ -146,3 +148,15 @@ class MemoryProvider(Protocol):
 2. 多意图 >3 段截断、pending >2 丢弃——极端长句的取舍已在代码注释与本文档声明。
 3. 记忆管理面（查看/删除用户记忆）按合规需求后补（表结构已支持按 user 清除）。
 ```
+
+## 附录：记忆写入事务一致性修订（2026-07-15）
+
+此前 ChatService 在图执行完成、但请求级数据库事务尚未提交时立即创建记忆后台任务，存在两类
+竞态：摘要查询可能看不到本轮消息；主事务随后提交失败时，长期事实却可能已由独立事务落库。
+
+本次修订：
+
+1. 新增 `app/chat/memory/scheduler.py`，在请求 `AsyncSession` 上登记待写入的记忆数据；
+2. 监听 SQLAlchemy `after_commit`，提交成功后才创建后台任务；监听 `after_rollback` 清空待执行项；
+3. 后台任务继续持有强引用，应用 shutdown 时限时等待，异常只记录日志；
+4. 增加提交前不执行、提交后执行、回滚不执行的回归测试。

@@ -11,7 +11,6 @@
 不在此写具体决策逻辑（决策在 Graph 节点 / 各业务模块中）。
 """
 
-import asyncio
 import time
 from uuid import uuid4
 
@@ -22,7 +21,10 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.chat.graph.builder import get_chat_graph
 from app.chat.llm.budget import set_current_tenant
 from app.chat.logging.decision_logger import build_log_data, decision_logger
-from app.core.config import settings
+from app.chat.memory.scheduler import (
+    enqueue_memory_after_commit,
+    wait_pending_memory_tasks,
+)
 from app.core.exceptions import AppException
 from app.core.i18n import resolve_locale
 from app.core.logging import get_logger, get_trace_id, set_trace_id
@@ -43,17 +45,10 @@ from app.schemas.chat import (
 
 logger = get_logger(__name__)
 
-# 后台 best-effort 任务的强引用集合（Stage 13：防 GC 提前取消 + 关停时收敛）
-_background_tasks: set[asyncio.Task] = set()
-
 
 async def wait_background_tasks(timeout: float = 5.0) -> None:
-    """应用关停时收敛在途后台任务（记忆写入等），超时放弃不阻塞关停。"""
-    pending = [t for t in _background_tasks if not t.done()]
-    if not pending:
-        return
-    logger.info("等待 %d 个在途后台任务收敛（<=%.0fs）...", len(pending), timeout)
-    await asyncio.wait(pending, timeout=timeout)
+    """应用关停时收敛记忆后台任务，保持既有 lifespan 调用接口。"""
+    await wait_pending_memory_tasks(timeout)
 
 
 class ChatService:
@@ -77,7 +72,7 @@ class ChatService:
             trace_id = "trace_" + uuid4().hex
             set_trace_id(trace_id)
         # 预算归属（Stage 17）：写入当前租户，供 LLM 收口计量与熔断；
-        # 背景任务（记忆摘要）由 create_task 复制上下文自动继承
+        # 提交后记忆任务会显式恢复租户上下文
         set_current_tenant(tenant_id)
 
         # A/B 实验分流（Stage 18）：确定性分桶命中变体，把参数覆盖写入 contextvar
@@ -155,26 +150,20 @@ class ChatService:
         # 指标：轮次耗时（意图域 × 回复分支，Stage 09 收口点）
         start_ts: float = initial_state["start_ts"]  # type: ignore[assignment]
         observe_turn(
-            final_intent, final_state.get("answer_source"), time.perf_counter() - start_ts
+            final_intent, final_state.get("answer_source"), time.perf_counter() - start_ts,
         )
 
-        # —— 记忆写入（Stage 10）：异步 best-effort，绝不阻塞响应 ——
-        if settings.MEMORY_PROVIDER != "off":
-            from app.chat.memory.factory import get_memory_provider
-
-            async def _remember_safe() -> None:
-                try:
-                    await get_memory_provider().remember(
-                        tenant_id, req.user_id, session_id, req.message, reply, final_intent
-                    )
-                except Exception:  # noqa: BLE001 - 记忆失败只记日志
-                    logger.exception("memory remember failed")
-
-            # 持强引用（Stage 13）：裸 create_task 只有事件循环弱引用，
-            # 可能在完成前被 GC 取消导致记忆静默丢失；done_callback 自动清理
-            task = asyncio.create_task(_remember_safe())
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
+        # —— 记忆写入（Stage 10）：提交后异步 best-effort ——
+        # 此时图已完成但请求事务尚未提交；只登记参数，commit 后才创建后台任务。
+        enqueue_memory_after_commit(
+            session,
+            tenant_id=tenant_id,
+            user_id=req.user_id,
+            session_id=session_id,
+            user_text=req.message,
+            reply=reply,
+            intent=final_intent,
+        )
 
         return ChatMessageData(
             message_id=final_state.get("user_message_id", ""),
@@ -266,7 +255,7 @@ class ChatService:
             or message.role not in ("assistant", "agent")
         ):
             raise AppException(
-                message="消息不存在或不可评价", error_code="MESSAGE_NOT_FOUND", status_code=404
+                message="消息不存在或不可评价", error_code="MESSAGE_NOT_FOUND", status_code=404,
             )
 
         from app.repositories.chat_feedback_repository import chat_feedback_repository
