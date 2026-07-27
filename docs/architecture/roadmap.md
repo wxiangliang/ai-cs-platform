@@ -60,6 +60,7 @@
 | — | Post-Stage 20 全链路 Review 加固 | ✅ 已实现（2026-07-27） | 六批整改（意图控制层/正确性/容量/延迟/演进/RAG 强化 WeKnora 对齐），274→300 tests，详见 `docs/requirements/post-stage-20-review-hardening/` |
 | 21 | 智能澄清 | ✅ 已实现（2026-07-27） | UNKNOWN 轮次 LLM 生成针对性澄清问句（top_k 候选+近期对话），替代固定模板；无 Key 降级零回归；unknown_streak 安全网不动；三层演进（澄清→只读诊断 agent→离线 deep agent）的第一层 |
 | 22 | 只读诊断 agent | ✅ 已实现（2026-07-27） | 解释性查询多步只读调查（ReAct 受约束变体：query_* 白名单/结构性终止/数字事实校验/完全可降级）；tool_invoke 静态链后按启发式触发，解释追加事实底稿；默认 DIAGNOSE_AGENT_ENABLED=false，联调开启；三层演进第二层 |
+| 23 | 对话方向纠偏 | ✅ 已实现（2026-07-27） | 错方向三盲区纯规则防线：任务中途否定（COLLECTING 判 DENY 仅终止当前任务+重定向话术）、零进度恢复降调、中置信软确认（<0.60 新开任务复述意图）；direction_correction_total 指标 + 错向监控 SQL；零 LLM 依赖 |
 
 > 依赖关系：04 是 05/06 的前置（都需要 LLM Provider 工厂）；05 与 06 可并行；
 > 07 依赖 05（工单是写操作）；08 可随时插入，越早越好；09 从 04 起持续建设。

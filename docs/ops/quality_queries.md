@@ -182,3 +182,40 @@ ORDER BY f.created_at DESC LIMIT 50;
 `rag_retrievals_total`（faq_hit/rag_answer/refused/degraded）、`confirm_gate_total`、
 `action_executions_total`、`handoff_tickets_total`、`rate_limited_total`、`chat_feedback_total`。
 多租户维度不进 label（基数控制），租户级分析用上面的 SQL。
+
+## 9. 方向纠偏监控（Stage 23）
+
+口径：「走错方向」的代理信号 = 任务中途否定率、确认门 DENY 率、任务 ABORTED 率、
+中置信软确认触发占比。上线初期建议每日盯，异常升高说明意图误判在放大。
+
+```sql
+-- 任务中途否定率：COLLECTING 下被用户否定的任务占开启任务的比例（近 7 天）
+SELECT count(*) FILTER (WHERE graph_trace_json->'trace' ? 'response_generate:task_denied')::numeric
+       / NULLIF(count(*) FILTER (WHERE status = 'NEEDS_SLOT'), 0) AS task_deny_rate
+FROM chat_decision_log
+WHERE tenant_id = :tenant AND created_at >= now() - interval '7 days';
+```
+
+```sql
+-- 中置信采纳占比：0.40-0.60 置信直接开答的轮次（软确认覆盖面，近 7 天）
+SELECT count(*) FILTER (WHERE (intent_json->>'confidence')::numeric BETWEEN 0.40 AND 0.60
+                         AND intent_json->>'decision_source' IN ('SETFIT', 'LLM'))::numeric
+       / NULLIF(count(*), 0) AS mid_conf_rate
+FROM chat_decision_log
+WHERE tenant_id = :tenant AND created_at >= now() - interval '7 days';
+```
+
+```sql
+-- 错向综合日报：否定/放弃/确认门拒绝 按日趋势
+SELECT date_trunc('day', created_at)::date AS day,
+       count(*) FILTER (WHERE status = 'ABORTED') AS aborted_turns,
+       count(*) FILTER (WHERE intent_json->>'decision_source' = 'RULE_TASK_DENY') AS task_denied,
+       count(*) FILTER (WHERE intent_json->>'pred_label' = 'META.DENY') AS deny_total,
+       count(*) AS turns
+FROM chat_decision_log
+WHERE tenant_id = :tenant AND created_at >= now() - interval '30 days'
+GROUP BY 1 ORDER BY 1 DESC;
+```
+
+> Prometheus 侧：`direction_correction_total{kind=task_denied|soft_confirm}` 看触发量趋势；
+> 字段名以 `chat_decision_log` 实际列为准（intent_json/graph_trace_json 见 decision_logger）。

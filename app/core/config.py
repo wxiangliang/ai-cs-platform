@@ -238,6 +238,11 @@ class Settings(BaseSettings):
     # top_k 候选进入澄清 prompt 的最低置信分（宽松下限——低置信正是本场景）
     CLARIFY_MIN_CANDIDATE_SCORE: float = 0.15
 
+    # ----- Stage 23 对话方向纠偏 -----
+    # 中置信软确认：SETFIT/LLM 来源、置信低于该值的新开任务，追问话术前
+    # 加意图复述（"您是想退货对吗？"）——不阻塞流程，用户扫一眼即可纠偏
+    INTENT_SOFT_CONFIRM_THRESHOLD: float = 0.60
+
     # ----- Stage 22 只读诊断 agent -----
     # 解释性查询（"为什么还没到"）的多步只读调查：LLM 在只读工具白名单内
     # 决定下一步查什么，代码控制终止。默认关闭=零回归；开启需真实 LLM 联调

@@ -7,8 +7,9 @@ LLM 润色路径的多语言由 prompt 的「按用户语言回复」指令处�
 from typing import Any
 
 from app.chat.graph.state import GraphState
-from app.chat.intent.types import IntentLabel
+from app.chat.intent.types import DecisionSource, IntentLabel
 from app.chat.skills.llm_responder import polish_reply
+from app.core.config import settings
 from app.chat.skills.registry import skill_registry
 from app.chat.skills.responder import render_reply
 from app.chat.state.types import TurnStatus
@@ -56,6 +57,18 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
     # 追问超限放弃任务：给明确的放弃+转人工建议话术（Stage 10 流转治理）
     if state.get("task_gave_up"):
         return {"reply": t("task.gave_up", locale), "graph_trace": ["response_generate"]}
+    # 任务中途否定（Stage 23 方向纠偏）：重定向话术——确认停止误开的任务，
+    # 引导用户直接说出真实诉求；有挂起任务时 save_turn 会追加续办提示
+    denied = state.get("denied_task")
+    if denied:
+        from app.core.metrics import count_direction
+
+        count_direction("task_denied")
+        denied_name = skill_registry.get(denied.get("intent", "")).name
+        return {
+            "reply": t("task.denied_redirect", locale, name=denied_name),
+            "graph_trace": ["response_generate:task_denied"],
+        }
     # 智能澄清（Stage 21）：意图不明轮次用 top_k 候选 + 近期对话生成针对性
     # 澄清问句替代固定模板；失败/无 Key 走原模板（零回归）。
     # 不过 polish——问句本身已是 LLM 输出，二次润色浪费且可能改坏选项
@@ -71,6 +84,21 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
         if question:
             return {"reply": question, "graph_trace": ["response_generate:clarify"]}
     draft = render_reply(status, skill, collected, locale)
+    # 中置信软确认（Stage 23 方向纠偏）：SETFIT/LLM 来源、置信不高的**新开**任务
+    # （无 task_id 且非恢复），追问话术前复述意图——不阻塞流程不加轮次，
+    # 用户扫一眼即可发现方向错了（配合任务中途否定通道退出）
+    if (
+        status == TurnStatus.NEEDS_SLOT
+        and active_task
+        and not active_task.get("task_id")
+        and not state.get("resumed_task")
+        and intent_dict.get("decision_source") in (DecisionSource.SETFIT, DecisionSource.LLM)
+        and float(intent_dict.get("confidence", 1.0)) < settings.INTENT_SOFT_CONFIRM_THRESHOLD
+    ):
+        from app.core.metrics import count_direction
+
+        count_direction("soft_confirm")
+        draft = t("intent.soft_confirm", locale, name=skill.name) + draft
     # L3 弱确认降级（Stage 13）：明确告知需回复「确认」，避免「好的」被误当放行
     if state.get("weak_confirm_recheck"):
         return {

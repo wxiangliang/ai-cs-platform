@@ -115,6 +115,19 @@ class DialogStateManager:
                     stack=stack,
                     end_state=DialogStateValue.ABORTED,
                 )
+            if active_task and current_state == DialogStateValue.COLLECTING:
+                # 任务中途否定（Stage 23 方向纠偏）：「不是要办这个」——
+                # 仅终止当前任务（栈照常恢复），不像 META.ABORT 清空一切；
+                # denied_task 供回复渲染重定向话术（"那您想办理什么？"）
+                result = self._finish_turn(
+                    status=TurnStatus.ABORTED,
+                    intent=intent,
+                    collected={},
+                    stack=stack,
+                    end_state=DialogStateValue.ABORTED,
+                )
+                result.denied_task = {"intent": active_task.get("intent", "")}
+                return result
             return self._fallback(current_state, stack)
 
         # —— 规则 2：纯槽位输入，续接正在补槽的任务 ——

@@ -43,6 +43,8 @@ async def dialog_state_resolve(state: GraphState) -> dict[str, Any]:
         "resumed_task": result.resumed_task,
         # —— Stage 10：追问超限放弃 ——
         "task_gave_up": result.gave_up,
+        # —— Stage 23：任务中途否定（回复渲染重定向话术）——
+        "denied_task": result.denied_task,
         # 最终生效的累计槽位：任务结束（如确认门通过）后 active_task 已清空，
         # 回复模板（如受理回执中的订单号）必须从这里取
         "effective_slots": result.collected_slots or state.get("slots") or {},

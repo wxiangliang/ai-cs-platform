@@ -65,6 +65,11 @@ RAG_RETRIEVALS = Counter("rag_retrievals_total", "RAG 检索次数", ["outcome"]
 # 只读诊断 agent（Stage 22）：answered=解释生效 / degraded=触发但降级回静态链
 DIAGNOSE_AGENT = Counter("diagnose_agent_total", "只读诊断 agent 结局", ["outcome"])
 
+# 方向纠偏（Stage 23）：task_denied=任务中途否定 / soft_confirm=中置信软确认
+DIRECTION_CORRECTION = Counter(
+    "direction_correction_total", "对话方向纠偏触发次数", ["kind"]
+)
+
 # 确认门结局：confirmed / denied / modified
 CONFIRM_GATE = Counter("confirm_gate_total", "确认门应答次数", ["outcome"])
 
@@ -163,6 +168,11 @@ def observe_kb_stage(stage: str, seconds: float) -> None:
 def count_diagnose(outcome: str) -> None:
     """记录一次只读诊断 agent 结局（Stage 22，outcome=answered/degraded）。"""
     DIAGNOSE_AGENT.labels(outcome=outcome).inc()
+
+
+def count_direction(kind: str) -> None:
+    """记录一次方向纠偏触发（Stage 23，kind=task_denied/soft_confirm）。"""
+    DIRECTION_CORRECTION.labels(kind=kind).inc()
 
 
 def count_confirm_gate(outcome: str) -> None:

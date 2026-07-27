@@ -55,3 +55,5 @@ class ResolveResult:
     resumed_task: dict[str, Any] | None = None
     # 任务因追问超限被放弃（回复给转人工建议话术，Stage 10）
     gave_up: bool = False
+    # 任务被用户中途否定（Stage 23 方向纠偏：回复重定向话术，只终止当前任务）
+    denied_task: dict[str, Any] | None = None

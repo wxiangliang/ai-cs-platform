@@ -70,6 +70,15 @@ _KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 _CONFIRM_WORDS = ("确认", "确定", "是的", "对的", "没问题", "可以", "好的", "嗯", "对", "ok", "yes")
 _DENY_WORDS = ("不对", "不要", "不用", "不确认", "先不", "别提交", "等等", "暂时不", "不了")
 
+# 任务中途否定（Stage 23，仅 COLLECTING 状态判定）：用户在补槽过程中否定
+# 方向本身（「不是要退货」）而非提供槽位。含数字不判——那是槽位纠正
+# （「不对，是 A12345678」）；限长防误吞长句新诉求
+_TASK_DENY_RE = re.compile(
+    r"(我)?不是(要|想|说)|搞错了|理解错|弄错了|不是这个意思|谁(要|说)"
+)
+_TASK_DENY_BARE = ("不对", "不是")
+_TASK_DENY_MAX_LEN = 12
+
 # 关键词命中的默认置信度
 _KEYWORD_CONFIDENCE = 0.9
 # 纯槽位输入的置信度
@@ -161,6 +170,16 @@ class RuleIntentClassifier:
             if gate is not None:
                 return gate
 
+        # —— 任务中途否定：仅在 COLLECTING 状态判定（Stage 23 方向纠偏）——
+        # 「不对，我不是要退货」不能被当作 UNKNOWN 吞掉继续追问槽位；
+        # 判 META.DENY 由状态机仅终止当前任务（不像 META.ABORT 清空一切）
+        if current_state == DialogStateValue.COLLECTING and self._is_task_deny(normalized):
+            return IntentResult(
+                pred_label=IntentLabel.META_DENY,
+                confidence=_CONFIRM_GATE_CONFIDENCE,
+                decision_source=DecisionSource.RULE_TASK_DENY,
+            )
+
         # —— META 控制类关键词（身份询问先于转人工，见词表处注释）——
         for label, keywords in _META_CONTROL_KEYWORDS:
             for kw in keywords:
@@ -216,6 +235,28 @@ class RuleIntentClassifier:
                     decision_source=DecisionSource.RULE_CONFIRM_GATE,
                 )
         return None
+
+    @staticmethod
+    def _is_task_deny(text: str) -> bool:
+        """任务中途否定判定（仅 COLLECTING 调用）。
+
+        含数字不判（槽位纠正「不对，是 A123」）；命中否定模式后做残差判定
+        （与纯放弃同纪律）：去掉否定表达与被否定的宾语后仍有实质内容
+        （「不是要退货，我想查物流」）→ 不判否定，交给语义层拆出新意图；
+        裸「不对/不是」只认极短句。
+        """
+        if len(text) > _TASK_DENY_MAX_LEN or any(ch.isdigit() for ch in text):
+            return False
+        stripped = text.strip("，。！？!?,. ")
+        if stripped in _TASK_DENY_BARE:
+            return True
+        m = _TASK_DENY_RE.search(text)
+        if not m:
+            return False
+        # 残差：否定模式之后最多允许 2-3 字宾语（「不是要退货」），
+        # 再长说明句中带着新诉求，放行语义层
+        residue = text[m.end():].strip("，。！？!?,. 的了呢啊吧")
+        return len(residue) <= 3
 
     @staticmethod
     def _is_pure_abort(text: str) -> bool:

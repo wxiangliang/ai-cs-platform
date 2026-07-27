@@ -128,6 +128,15 @@ def _resume_note(state: GraphState) -> str:
     else:
         ask = render_reply(resume_status, skill, resumed.get("collected_slots", {}), locale)
     key = "resume.suspended" if resumed.get("task_id") else "resume.pending"
+    # 零进度恢复降调（Stage 23 方向纠偏）：一个槽位都没收集过的挂起任务
+    # 很可能是误判开出的——恢复时降调为「可选续办」并给出退出话术，
+    # 配合 COLLECTING 否定通道一句话即可干净退出，不再是强制续问
+    if (
+        key == "resume.suspended"
+        and not resumed.get("ready")
+        and not resumed.get("collected_slots")
+    ):
+        key = "resume.suspended_optional"
     return t(key, locale, name=skill.name, ask=ask)
 
 

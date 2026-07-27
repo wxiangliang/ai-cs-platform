@@ -49,6 +49,7 @@ class DecisionSource:
     RULE_KEYWORD = "RULE_KEYWORD"  # 关键词命中
     RULE_SLOT_ONLY = "RULE_SLOT_ONLY"  # 纯槽位输入（如只发订单号）
     RULE_CONFIRM_GATE = "RULE_CONFIRM_GATE"  # 确认门应答（CONFIRMING 状态下的确认/否认）
+    RULE_TASK_DENY = "RULE_TASK_DENY"  # 任务中途否定（COLLECTING 状态，Stage 23 方向纠偏）
     RULE_FALLBACK = "RULE_FALLBACK"  # 兜底未知
     # —— SetFit 语义层（Stage 04-02）——
     SETFIT = "SETFIT"  # SetFit 模型高置信命中

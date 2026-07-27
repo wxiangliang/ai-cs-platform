@@ -29,6 +29,10 @@ TABLE: dict[str, str] = {
     "resume.ready": "信息已齐，回复「继续」即可为您查询。",
     "resume.suspended": "\n另外，我们继续您刚才的「{name}」：{ask}",
     "resume.pending": "\n另外，关于您提到的「{name}」：{ask}",
+    # —— Stage 23 方向纠偏 ——
+    "resume.suspended_optional": "\n另外，刚才的「{name}」还没有开始办理。如需继续：{ask}如果不需要，回复「不是要办这个」即可。",
+    "task.denied_redirect": "好的，先不办理「{name}」了。请问您想咨询或办理什么？直接告诉我就可以。",
+    "intent.soft_confirm": "您是想「{name}」对吗？如果不是，直接说您的需求即可。",
     # —— 写操作回执（Stage 05）——
     "action.already_executed": "这笔申请此前已提交成功，无需重复提交。如需查询进度请告诉我工单号。",
     "action.failed": "抱歉，提交时遇到问题，我已记录您的申请，稍后由人工客服跟进处理，请放心。",
