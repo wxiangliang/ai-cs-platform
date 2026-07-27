@@ -113,5 +113,6 @@ async def account_llm_result(purpose: str, result: Any) -> None:
     tenant = get_current_tenant()
     from app.core.metrics import count_llm_tokens
 
-    count_llm_tokens(tenant, purpose, tokens)
+    # 指标只记聚合（Stage 25 基数整改）；租户明细由下方 Redis 日计数承载
+    count_llm_tokens(purpose, tokens)
     await record_usage(tenant, tokens)

@@ -1,0 +1,321 @@
+{
+  "uid": "ai-cs-platform",
+  "title": "AI 客服后端 · 服务与链路健康（Stage 25）",
+  "tags": [
+    "ai-cs-platform"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "轮次延迟 P50 / P95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(chat_turn_duration_seconds_bucket[5m])) by (le))",
+          "refId": "A",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(chat_turn_duration_seconds_bucket[5m])) by (le))",
+          "refId": "B",
+          "legendFormat": "P95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "轮次速率（按回复分支）",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(chat_turn_duration_seconds_count[5m])) by (branch)",
+          "refId": "A",
+          "legendFormat": "{{branch}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "意图决策来源分布",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(intent_decisions_total[5m])) by (decision_source)",
+          "refId": "A",
+          "legendFormat": "{{decision_source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "RAG 检索结局",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(rag_retrievals_total[5m])) by (outcome)",
+          "refId": "A",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "LLM 调用 / 失败",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_calls_total[5m])) by (purpose)",
+          "refId": "A",
+          "legendFormat": "calls {{purpose}}"
+        },
+        {
+          "expr": "sum(rate(llm_failures_total[5m])) by (purpose)",
+          "refId": "B",
+          "legendFormat": "failures {{purpose}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "LLM token 用量与预算熔断",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_tokens_total[5m])) by (purpose)",
+          "refId": "A",
+          "legendFormat": "tokens {{purpose}}"
+        },
+        {
+          "expr": "sum(rate(llm_budget_exceeded_total[5m]))",
+          "refId": "B",
+          "legendFormat": "budget_exceeded"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "知识检索分段耗时 P95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(kb_stage_duration_seconds_bucket[5m])) by (le, stage))",
+          "refId": "A",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "护栏拦截 / 方向纠偏",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(guardrail_blocks_total[5m])) by (rule)",
+          "refId": "A",
+          "legendFormat": "guardrail {{rule}}"
+        },
+        {
+          "expr": "sum(rate(direction_correction_total[5m])) by (kind)",
+          "refId": "B",
+          "legendFormat": "correction {{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "转人工 / 确认门 / 诊断 agent",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(handoff_tickets_total[5m])) by (reason)",
+          "refId": "A",
+          "legendFormat": "handoff {{reason}}"
+        },
+        {
+          "expr": "sum(rate(confirm_gate_total[5m])) by (outcome)",
+          "refId": "B",
+          "legendFormat": "confirm {{outcome}}"
+        },
+        {
+          "expr": "sum(rate(diagnose_agent_total[5m])) by (outcome)",
+          "refId": "C",
+          "legendFormat": "diagnose {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "语义缓存 / 限流 / 反馈",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(semantic_cache_total[5m])) by (outcome)",
+          "refId": "A",
+          "legendFormat": "cache {{outcome}}"
+        },
+        {
+          "expr": "sum(rate(rate_limited_total[5m])) by (scope)",
+          "refId": "B",
+          "legendFormat": "ratelimit {{scope}}"
+        },
+        {
+          "expr": "sum(rate(chat_feedback_total[5m])) by (rating)",
+          "refId": "C",
+          "legendFormat": "feedback {{rating}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ]
+}

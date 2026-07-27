@@ -134,6 +134,16 @@ def run_job(job: Job, *, sleep=time.sleep) -> bool:
     return False
 
 
+def _touch_heartbeat() -> None:
+    """写心跳文件（Stage 25：cron 容器 healthcheck 检查其时效，挂死自愈）。"""
+    path = os.environ.get("SCHEDULER_HEARTBEAT_FILE", "/tmp/scheduler-heartbeat")
+    try:
+        with open(path, "w") as f:
+            f.write(str(time.time()))
+    except OSError:  # noqa: PERF203 - 心跳写失败只记日志，不影响任务
+        logger.warning("heartbeat write failed: %s", path)
+
+
 def loop(jobs: list[Job], *, now=time.monotonic, sleep=time.sleep, max_ticks: int | None = None) -> None:
     """主循环：到期任务顺序执行（单容器场景串行足够，互不抢 DB）。
 
@@ -145,6 +155,7 @@ def loop(jobs: list[Job], *, now=time.monotonic, sleep=time.sleep, max_ticks: in
     ticks = 0
     while max_ticks is None or ticks < max_ticks:
         ticks += 1
+        _touch_heartbeat()
         current = now()
         for job in jobs:
             if current >= job.next_due:

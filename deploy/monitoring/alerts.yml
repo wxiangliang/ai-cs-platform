@@ -1,0 +1,69 @@
+# 告警规则（Stage 25）。阈值为保守默认，标注「待标定」的项在 B3 压测后回调。
+# 只引用 app/core/metrics.py 实际存在的指标（tests/stage25 静态断言防漂移）。
+groups:
+  - name: ai-cs-platform
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "API 实例失联（up=0 超过 1 分钟）"
+
+      - alert: HighTurnLatencyP95
+        # 轮次 P95 > 8s 持续 10 分钟（待 B3 压测标定；真实 LLM 接入后需回调）
+        expr: histogram_quantile(0.95, sum(rate(chat_turn_duration_seconds_bucket[5m])) by (le)) > 8
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "聊天轮次 P95 延迟超过 8s"
+
+      - alert: LlmFailureSpike
+        # LLM 失败占比 > 30% 持续 5 分钟（供应商故障/Key 失效/限流风暴）
+        expr: |
+          sum(rate(llm_failures_total[5m]))
+            / clamp_min(sum(rate(llm_calls_total[5m])), 0.001) > 0.3
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "LLM 调用失败率超过 30%（链路已降级运行，尽快排查供应商/Key）"
+
+      - alert: LlmBudgetExceededSpike
+        expr: rate(llm_budget_exceeded_total[10m]) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "LLM 预算熔断频繁触发（租户明细查 Redis 日计数，见 monitoring.md）"
+
+      - alert: GuardrailBlockSpike
+        # 护栏拦截速率异常升高：疑似注入攻击或误拦截（对比日常基线，待标定）
+        expr: sum(rate(guardrail_blocks_total[10m])) > 0.5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "护栏拦截激增（按 rule label 下钻：注入攻击或词表误拦）"
+
+      - alert: RagRefusalRateHigh
+        # 拒答占比 > 50% 持续 15 分钟：知识库覆盖不足或检索/向量服务异常
+        expr: |
+          sum(rate(rag_retrievals_total{outcome=~"refused|degraded"}[15m]))
+            / clamp_min(sum(rate(rag_retrievals_total[15m])), 0.001) > 0.5
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "RAG 拒答/降级占比过半（检查 Milvus/embedding 或知识库覆盖）"
+
+      - alert: RateLimitSpike
+        expr: sum(rate(rate_limited_total[5m])) > 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "限流高频触发（流量激增或配额过紧）"
+
+      - alert: HandoffSpike
+        # 转人工建单速率异常：bot 质量劣化的综合信号
+        expr: sum(rate(handoff_tickets_total[15m])) > 0.5
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "转人工建单激增（按 reason label 下钻定位触发源）"

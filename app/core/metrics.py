@@ -49,10 +49,11 @@ LLM_CALLS = Counter("llm_calls_total", "LLM 调用次数", ["purpose"])
 LLM_FAILURES = Counter("llm_failures_total", "LLM 调用失败次数", ["purpose"])
 
 # LLM token 用量与预算熔断（Stage 17）
-LLM_TOKENS = Counter("llm_tokens_total", "LLM token 用量", ["tenant", "purpose"])
-LLM_BUDGET_EXCEEDED = Counter(
-    "llm_budget_exceeded_total", "LLM 预算熔断次数", ["tenant"]
-)
+# 基数整改（Stage 25，post-stage-19 P0）：tenant 不进 label（模块原则），
+# Prometheus 只保聚合；租户级 token 明细走 budget 模块的 Redis 日计数
+# （llm_budget:{tenant}:{day}），查询口径见 docs/ops/monitoring.md
+LLM_TOKENS = Counter("llm_tokens_total", "LLM token 用量", ["purpose"])
+LLM_BUDGET_EXCEEDED = Counter("llm_budget_exceeded_total", "LLM 预算熔断次数")
 
 # 语义缓存结局：hit / miss / store（Stage 17）
 SEMANTIC_CACHE = Counter(
@@ -139,15 +140,15 @@ def count_llm_call(purpose: str, ok: bool) -> None:
         LLM_FAILURES.labels(purpose=purpose).inc()
 
 
-def count_llm_tokens(tenant: str, purpose: str, tokens: int) -> None:
-    """累计 LLM token 用量（Stage 17，budget.account_llm_result 收口调用）。"""
+def count_llm_tokens(purpose: str, tokens: int) -> None:
+    """累计 LLM token 用量（Stage 17；Stage 25 起不带租户维度，租户明细走 Redis/SQL）。"""
     if tokens > 0:
-        LLM_TOKENS.labels(tenant=tenant or "-", purpose=purpose).inc(tokens)
+        LLM_TOKENS.labels(purpose=purpose).inc(tokens)
 
 
-def count_llm_budget_exceeded(tenant: str) -> None:
-    """记录一次 LLM 预算熔断（Stage 17）。"""
-    LLM_BUDGET_EXCEEDED.labels(tenant=tenant or "-").inc()
+def count_llm_budget_exceeded() -> None:
+    """记录一次 LLM 预算熔断（Stage 17；Stage 25 起不带租户维度）。"""
+    LLM_BUDGET_EXCEEDED.inc()
 
 
 def count_semantic_cache(outcome: str) -> None:

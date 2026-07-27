@@ -76,6 +76,7 @@ docs/
     stage-23-direction-correction/01_direction_correction.md    # ✅ 已实现（方向纠偏：任务中途否定/零进度恢复降调/中置信软确认，纯规则零 LLM 依赖，附录有实现记录）
     post-stage-23-backend-roadmap/01_backend_next_steps.md      # 📋 规划文档（后端下一步：真实化 A1-A4 → 生产化 B1-B3 → 补全 C1-C6，功能建设收口）
     stage-24-deployment-orchestration/01_deployment_orchestration.md # ✅ 已实现（规划 B1：Dockerfile/生产 compose/调度器带重试告警/部署清单，附录有实现记录）
+    stage-25-monitoring-alerting/01_monitoring_alerting.md      # ✅ 已实现（规划 B2：指标基数整改/告警规则/Grafana 看板 provisioning/cron 心跳，附录有实现记录）
 
   database/
     chat_tables.md                  # 核心表设计 v2（字段类型/枚举/外键决策）
@@ -93,6 +94,7 @@ docs/
   ops/
     local_dev_and_runbook.md
     deployment.md                   # 生产部署清单（Stage 24：镜像/编排/cron/告警/备份）
+    monitoring.md                   # 监控告警（Stage 25：看板/规则/演练/租户明细口径）
 ```
 
 ---

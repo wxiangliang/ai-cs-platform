@@ -64,6 +64,8 @@
 
 | 24 | 部署编排（规划 B1） | ✅ 已实现（2026-07-27） | Dockerfile（uv 多阶段/非 root）+ docker-compose.prod.yml（api/cron/migrate/mcp/kb profile，零明文口令，ready 探针）+ deploy/scheduler.py（三 cron：重试+告警+失败隔离）+ deployment.md 部署清单；镜像构建验证留 CI |
 
+| 25 | 监控告警（规划 B2） | ✅ 已实现（2026-07-27） | 指标基数整改（tenant 不进 label，明细走 Redis/SQL）+ Prometheus 8 条告警规则 + Grafana 10 面板看板 provisioning + compose monitoring profile + cron 心跳自愈；引用指标名静态交叉校验；阈值待 B3 标定 |
+
 > **Stage 23 后功能建设收口**。后端下一步（真实 LLM/业务联调 → 生产化 → 数据飞轮 → 能力补全）
 > 的完整规划见 `docs/requirements/post-stage-23-backend-roadmap/01_backend_next_steps.md`，
 > 开工前按规范拆 Stage 文档。

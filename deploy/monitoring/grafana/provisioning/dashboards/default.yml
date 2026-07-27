@@ -1,0 +1,9 @@
+# Grafana 看板自动装载（Stage 25）
+apiVersion: 1
+providers:
+  - name: ai-cs-platform
+    folder: ""
+    type: file
+    disableDeletion: false
+    options:
+      path: /var/lib/grafana/dashboards

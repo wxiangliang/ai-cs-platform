@@ -73,7 +73,7 @@ async def chat_completion(system: str, user: str, purpose: Purpose = "generate")
     # 预算熔断（Stage 17）：当前租户当日超预算 → 与无 Key 同路径降级到模板/规则
     tenant = get_current_tenant()
     if await is_over_budget(tenant):
-        count_llm_budget_exceeded(tenant)
+        count_llm_budget_exceeded()
         return None
     # 轮级时间预算（容量修复）：本轮 LLM 时间已用尽 → 直接降级，不再排队等超时
     if budget_exhausted():

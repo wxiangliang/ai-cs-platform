@@ -1,0 +1,17 @@
+# Alertmanager 样例配置（Stage 25，部署侧按需启用）：
+# 1. 复制为 alertmanager.yml 并填入真实 webhook 地址；
+# 2. compose 中加 alertmanager 服务（prom/alertmanager 镜像，挂载本文件）；
+# 3. 取消 deploy/monitoring/prometheus.yml 中 alerting 段的注释。
+route:
+  receiver: webhook
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: webhook
+    webhook_configs:
+      # 与 cron 告警共用一个接收端（企微/钉钉/Slack 的入站 webhook 网关）
+      - url: "https://example.com/your-webhook"
+        send_resolved: true
