@@ -31,6 +31,23 @@ CONTROL_CASES = [
     ("对的没问题", DialogStateValue.CONFIRMING, "META.CONFIRM"),
     ("先不了", DialogStateValue.CONFIRMING, "META.DENY"),
     ("确认", None, "META.UNKNOWN"),  # 非确认门上下文不得输出 CONFIRM
+    # —— 控制层误判修复回归（2026-07-27）：长句夹带诉求/被动式/身份询问 ——
+    ("你是真人吗", None, "META.BOT_IDENTITY"),  # 问身份，不得被「真人」误吞成转人工
+    ("我要真人客服", None, "META.TRANSFER_HUMAN"),  # 真要人工的仍要能转
+    ("算了，还是帮我退款吧", None, "AFTERSALE.REFUND"),  # 「算了」是转折词不是放弃
+    ("算了，然后都不用了", None, "META.ABORT"),  # 长句纯放弃仍判 ABORT
+    ("订单被取消了是怎么回事", None, "ORDER.QUERY_STATUS"),  # 被动式是状态咨询不是取消请求
+]
+
+# 这些句子含控制层关键词但语义是业务咨询，控制层必须放行（返回 None）
+# 交给语义层——否则 SetFit/LLM 永远没机会纠正（修复前全部被误短路）
+CONTROL_PASSTHROUGH_CASES = [
+    "活动什么时候结束",
+    "怎么取消自动续费",
+    "不用了谢谢，问下退货政策",
+    "被取消的订单能恢复吗",
+    "订单已取消了吗",
+    "订单怎么被取消了",
 ]
 
 
@@ -42,6 +59,16 @@ async def test_control_layer_adversarial_cases():
         if result.pred_label != expect:
             failures.append(f"{text!r}(ctx={ctx}) -> {result.pred_label}, expect {expect}")
     assert not failures, "控制层对抗样例回归失败：\n" + "\n".join(failures)
+
+
+def test_control_layer_passthrough_cases():
+    """含控制关键词的业务咨询不得被控制层短路（必须到达语义层）。"""
+    failures = []
+    for text in CONTROL_PASSTHROUGH_CASES:
+        result = rule_intent_classifier.classify_control(text)
+        if result is not None:
+            failures.append(f"{text!r} -> {result.pred_label}, expect None(放行语义层)")
+    assert not failures, "控制层放行回归失败：\n" + "\n".join(failures)
 
 
 @pytest.mark.skipif(

@@ -20,15 +20,29 @@ from app.chat.slots.patterns import ORDER_ID_ONLY_RE, PHONE_ONLY_RE
 from app.chat.state.types import DialogStateValue
 
 # 「取消订单」类表达：宾语是订单 → 业务意图 ORDER.CANCEL，
-# 必须先于 META.ABORT 的裸「取消」关键词判定（taxonomy 第 4 节裁决规则 1）
-_CANCEL_ORDER_RE = re.compile(r"(取消.{0,4}(订单|这单|那单|单子))|((订单|这单|那单).{0,4}取消)|(退订)")
+# 必须先于 META.ABORT 的裸「取消」关键词判定（taxonomy 第 4 节裁决规则 1）。
+# 被动/完成式（「订单被取消了」「订单已取消」）是状态咨询不是取消请求：
+# 「取消」前排除「被/已」，「订单…取消」中间不得隔「被/已」。
+_CANCEL_ORDER_RE = re.compile(
+    r"((?<![被已])取消.{0,4}(订单|这单|那单|单子))|((订单|这单|那单)[^被已]{0,4}取消)|(退订)"
+)
 
-# META 控制类关键词（控制层专用，最高优先级；错判代价高、关键词精度足够，不交给语义模型）
+# META 控制类关键词（控制层专用，最高优先级）。
+# 顺序即优先级：身份询问必须先于转人工——「你是真人吗」问的是身份，
+# 若先判转人工会被「真人」子串误吞成建单。
+# META.ABORT 不在此表：裸「算了/取消/结束」在长句里常是转折词而非放弃指令，
+# 需经 _is_pure_abort 纯放弃判定，见 classify_control。
 _META_CONTROL_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
-    (IntentLabel.META_TRANSFER_HUMAN, ("转人工", "人工客服", "找客服", "真人", "客服电话")),
-    (IntentLabel.META_ABORT, ("算了", "不用了", "不需要", "取消", "没事了", "结束")),
     (IntentLabel.META_BOT_IDENTITY, ("你是机器人", "你是真人", "你是谁", "是不是机器人", "人工还是机器")),
+    (IntentLabel.META_TRANSFER_HUMAN, ("转人工", "人工客服", "找客服", "真人", "客服电话")),
 ]
+
+# 放弃会话关键词（配合纯放弃判定使用，不做裸子串命中）
+_ABORT_WORDS = ("算了", "不用了", "不需要", "没事了", "取消", "结束")
+# 纯放弃判定的语气/连接成分：去掉放弃词后，剩余字符全部落在此集合内才算纯放弃。
+# 「算了，然后都不用了」→ 剩「然后都」→ 纯放弃；
+# 「算了，还是帮我退款吧」→ 剩「帮我退款」→ 带业务诉求，放行给语义层。
+_ABORT_FILLER_CHARS = frozenset("，。！？；、!?,.;: 那就先再都也还是然后吧啊呢哦嗯了的哈好呀喔嘛谢多您你我")
 
 # 业务意图关键词表（纯规则模式使用；混合模式下这些意图交给 SetFit 语义层）。
 # 命中即返回，顺序即优先级。
@@ -147,7 +161,7 @@ class RuleIntentClassifier:
             if gate is not None:
                 return gate
 
-        # —— META 控制类关键词（错判代价高，关键词精度足够，不交给模型）——
+        # —— META 控制类关键词（身份询问先于转人工，见词表处注释）——
         for label, keywords in _META_CONTROL_KEYWORDS:
             for kw in keywords:
                 if kw in normalized or kw in lowered:
@@ -156,6 +170,15 @@ class RuleIntentClassifier:
                         confidence=_KEYWORD_CONFIDENCE,
                         decision_source=DecisionSource.RULE_KEYWORD,
                     )
+
+        # —— 放弃会话：必须整句是纯放弃表达才短路，长句夹带诉求放行给语义层 ——
+        # （「怎么取消自动续费」「活动什么时候结束」是咨询，不是放弃）
+        if any(w in normalized for w in _ABORT_WORDS) and self._is_pure_abort(normalized):
+            return IntentResult(
+                pred_label=IntentLabel.META_ABORT,
+                confidence=_KEYWORD_CONFIDENCE,
+                decision_source=DecisionSource.RULE_KEYWORD,
+            )
 
         # —— 纯槽位输入：整句基本只包含订单号或手机号 ——
         if self._is_slot_only(normalized):
@@ -193,6 +216,19 @@ class RuleIntentClassifier:
                     decision_source=DecisionSource.RULE_CONFIRM_GATE,
                 )
         return None
+
+    @staticmethod
+    def _is_pure_abort(text: str) -> bool:
+        """纯放弃判定：去掉放弃词后，剩余字符全部是语气/连接成分才算放弃。
+
+        防止「算了/取消/结束/不用了」在长句中作转折词时误吞用户真实诉求
+        （确认门应答判定用 ≤10 字符护栏，这里同理但按内容判：
+        长句纯放弃「算了，然后都不用了」仍要能判 ABORT）。
+        """
+        residue = text
+        for word in _ABORT_WORDS:
+            residue = residue.replace(word, "")
+        return all(ch in _ABORT_FILLER_CHARS for ch in residue)
 
     @staticmethod
     def _is_slot_only(text: str) -> bool:
