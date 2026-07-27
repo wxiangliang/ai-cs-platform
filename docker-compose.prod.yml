@@ -1,0 +1,161 @@
+# 生产编排（Stage 24，后端侧）。使用方式见 docs/ops/deployment.md：
+#   cp .env.example .env && 按生产要求填写（APP_ENV=prod 触发配置硬门禁）
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml run --rm migrate   # Alembic 迁移
+#   docker compose -f docker-compose.prod.yml up -d              # api + cron + 依赖
+#   docker compose -f docker-compose.prod.yml --profile kb --profile mcp up -d  # 加 Milvus/MCP
+#
+# 约束：敏感配置一律走 .env（env_file 注入），本文件不出现明文密钥；
+#       models/（SetFit 产物）用 volume 挂载，缺失时分类自动降级规则层。
+
+services:
+  api:
+    build: .
+    image: ai-cs-platform:latest
+    env_file:
+      - path: .env
+        required: false  # 生产必备（见 deployment.md）；缺失时由 :? 插值兜底拒启
+    environment:
+      APP_ENV: prod
+      # 多 worker 指标聚合（Stage 13）：目录由下方 tmpfs 提供
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?在 .env 配置 POSTGRES_PASSWORD}@postgres:5432/ai_cs_platform
+      REDIS_URL: redis://redis:6379/0
+      MILVUS_URI: http://milvus:19530
+    tmpfs:
+      - /tmp/prometheus
+    volumes:
+      # SetFit 模型产物（运行时资产，不进镜像；无产物自动降级规则分类）
+      - ./models:/app/models:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # 就绪探针：/api/health/ready 含 DB/Redis 探活；镜像无 curl 用 python urllib
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health/ready',timeout=3).status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # 一次性迁移任务：compose run --rm migrate
+  migrate:
+    profiles: ["tools"]
+    image: ai-cs-platform:latest
+    build: .
+    env_file:
+      - path: .env
+        required: false  # 生产必备（见 deployment.md）；缺失时由 :? 插值兜底拒启
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?在 .env 配置 POSTGRES_PASSWORD}@postgres:5432/ai_cs_platform
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # 定时任务：会话生命周期 / 知识库定时生效 / 质量视图刷新（重试+告警见 deploy/scheduler.py）
+  cron:
+    image: ai-cs-platform:latest
+    build: .
+    env_file:
+      - path: .env
+        required: false  # 生产必备（见 deployment.md）；缺失时由 :? 插值兜底拒启
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?在 .env 配置 POSTGRES_PASSWORD}@postgres:5432/ai_cs_platform
+      REDIS_URL: redis://redis:6379/0
+      MILVUS_URI: http://milvus:19530
+    command: ["python", "deploy/scheduler.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # MCP 业务工具服务（TOOL_PROVIDER=mcp 时启用；对接真实业务系统改其内部实现，Stage 11）
+  mcp:
+    profiles: ["mcp"]
+    image: ai-cs-platform:latest
+    build: .
+    env_file:
+      - path: .env
+        required: false  # 生产必备（见 deployment.md）；缺失时由 :? 插值兜底拒启
+    command: ["python", "scripts/run_mcp_server.py"]
+    ports:
+      - "8400:8400"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    env_file:
+      - path: .env
+        required: false  # 生产必备（见 deployment.md）；缺失时由 :? 插值兜底拒启
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?在 .env 配置 POSTGRES_PASSWORD}
+      POSTGRES_DB: ai_cs_platform
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  milvus:
+    profiles: ["kb"]
+    image: milvusdb/milvus:v2.5.10
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      COMMON_STORAGETYPE: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /milvus/configs/embedEtcd.yaml <<'YAML'
+        listen-client-urls: http://0.0.0.0:2379
+        advertise-client-urls: http://0.0.0.0:2379
+        quota-backend-bytes: 4294967296
+        auto-compaction-mode: revision
+        auto-compaction-retention: '1000'
+        YAML
+        exec milvus run standalone
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  redis_data:
+  milvus_data:

@@ -62,6 +62,8 @@
 | 22 | 只读诊断 agent | ✅ 已实现（2026-07-27） | 解释性查询多步只读调查（ReAct 受约束变体：query_* 白名单/结构性终止/数字事实校验/完全可降级）；tool_invoke 静态链后按启发式触发，解释追加事实底稿；默认 DIAGNOSE_AGENT_ENABLED=false，联调开启；三层演进第二层 |
 | 23 | 对话方向纠偏 | ✅ 已实现（2026-07-27） | 错方向三盲区纯规则防线：任务中途否定（COLLECTING 判 DENY 仅终止当前任务+重定向话术）、零进度恢复降调、中置信软确认（<0.60 新开任务复述意图）；direction_correction_total 指标 + 错向监控 SQL；零 LLM 依赖 |
 
+| 24 | 部署编排（规划 B1） | ✅ 已实现（2026-07-27） | Dockerfile（uv 多阶段/非 root）+ docker-compose.prod.yml（api/cron/migrate/mcp/kb profile，零明文口令，ready 探针）+ deploy/scheduler.py（三 cron：重试+告警+失败隔离）+ deployment.md 部署清单；镜像构建验证留 CI |
+
 > **Stage 23 后功能建设收口**。后端下一步（真实 LLM/业务联调 → 生产化 → 数据飞轮 → 能力补全）
 > 的完整规划见 `docs/requirements/post-stage-23-backend-roadmap/01_backend_next_steps.md`，
 > 开工前按规范拆 Stage 文档。
