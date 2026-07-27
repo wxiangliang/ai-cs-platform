@@ -18,6 +18,10 @@ START → load_session_state → preprocess_message → guardrail_check
 - rag_answer（R1/R2）：FAQ.GENERAL；或 META.UNKNOWN 兜底且无进行中任务；
 - R5 约束：补槽/确认门轮次（NEEDS_SLOT/NEEDS_CONFIRM）不触发任何检索与工具。
 
+blocked 条件边：load_session_state（接管静默/CSAT 捕获）与 guardrail_check
+（护栏拦截）后各有一条到 response_generate 的短路边——blocked 轮次不再空跑
+中间透传节点（graph_trace 相应变短，决策日志反映真实执行路径）。
+
 图编译一次后复用（compile 成本不低，避免每次请求重建）。
 """
 
@@ -55,6 +59,23 @@ _LINEAR_SEQUENCE = [
     ("dialog_state_resolve", dialog_state_resolve),
     ("skill_resolve", skill_resolve),
 ]
+
+
+def _route_after_load(state: GraphState) -> str:
+    """load_session_state 之后：上游短路轮次（人工接管静默 / CSAT 评分捕获）
+    直达回复生成，不再空跑预处理到技能解析的 7 个透传节点。"""
+    if state.get("blocked"):
+        return "response_generate"
+    return "preprocess_message"
+
+
+def _route_after_guardrail(state: GraphState) -> str:
+    """guardrail_check 之后：拦截轮次（注入/违禁/灌注）直达回复生成
+    （护栏话术），跳过意图/槽位/确认门/状态机/技能 5 个透传节点。
+    各节点内保留 blocked 防御检查（直接调用节点的测试路径仍成立）。"""
+    if state.get("blocked"):
+        return "response_generate"
+    return "intent_classify"
 
 # 回复分支节点：全部汇入 save_turn
 _REPLY_NODES = {
@@ -112,9 +133,22 @@ def build_chat_graph():
         graph.add_node(name, fn)
     graph.add_node("save_turn", save_turn)
 
-    # 线性段
-    graph.add_edge(START, _LINEAR_SEQUENCE[0][0])
-    for (prev_name, _), (next_name, _) in zip(_LINEAR_SEQUENCE, _LINEAR_SEQUENCE[1:]):
+    # 线性段（blocked 条件边：短路/拦截轮次提前跳到回复生成，不空跑透传节点）
+    graph.add_edge(START, "load_session_state")
+    graph.add_conditional_edges(
+        "load_session_state",
+        _route_after_load,
+        {"preprocess_message": "preprocess_message", "response_generate": "response_generate"},
+    )
+    graph.add_edge("preprocess_message", "guardrail_check")
+    graph.add_conditional_edges(
+        "guardrail_check",
+        _route_after_guardrail,
+        {"intent_classify": "intent_classify", "response_generate": "response_generate"},
+    )
+    for (prev_name, _), (next_name, _) in zip(
+        _LINEAR_SEQUENCE[3:], _LINEAR_SEQUENCE[4:]
+    ):
         graph.add_edge(prev_name, next_name)
 
     # 条件路由：五个回复分支都汇入 save_turn

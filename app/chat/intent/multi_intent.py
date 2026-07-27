@@ -11,6 +11,7 @@
 CHITCHAT/UNKNOWN 段在存在业务意图时忽略。
 """
 
+import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -88,12 +89,16 @@ async def detect_multi_intent(
         return None
     segments = segments[:_MAX_SEGMENTS]
 
-    # 每段独立分类，忽略非业务段；相邻同意图段合并（槽位一起抽）
-    classified: list[tuple[str, str, IntentResult]] = []  # (intent, seg_text, result)
-    for seg in segments:
-        result = await classifier.classify(
-            seg, current_state=current_state, has_active_task=has_active_task
+    # 每段独立分类（并行——各段互不依赖，SetFit 线程池推理/LLM 二判可并发，
+    # 3 段耗时从三者之和降为三者最大值），忽略非业务段；相邻同意图段合并（槽位一起抽）
+    results = await asyncio.gather(
+        *(
+            classifier.classify(seg, current_state=current_state, has_active_task=has_active_task)
+            for seg in segments
         )
+    )
+    classified: list[tuple[str, str, IntentResult]] = []  # (intent, seg_text, result)
+    for seg, result in zip(segments, results):
         if result.pred_label in _NON_BUSINESS:
             continue
         if classified and classified[-1][0] == result.pred_label:

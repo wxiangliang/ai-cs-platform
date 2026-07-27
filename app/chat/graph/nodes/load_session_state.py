@@ -27,8 +27,21 @@ from app.repositories.chat_task_repository import chat_task_repository
 
 
 async def load_session_state(state: GraphState, config: RunnableConfig) -> dict[str, Any]:
-    """读取或初始化会话与对话状态。"""
+    """读取或初始化会话与对话状态（读取后提交，归还连接）。"""
     session = get_db_session_from_config(config)
+    result = await _load_state(state, session)
+    # 阶段边界提交（容量修复）：phase-1 的读与自愈写（隐式建会话/closed 重开/
+    # 任务过期标记/locale 记忆）在此定稿，连接随 commit 归还连接池——
+    # 中段（意图/槽位/确认门等 LLM 调用）不再持有任何 DB 连接，
+    # 下一次 SQL（检索或 save_turn）才重新短暂借出。
+    # 并发正确性不变：dialog_state 乐观锁仍在 save_turn 提交时把关（冲突 409）；
+    # 归属校验失败等异常路径不经过此处，由上层依赖统一 rollback
+    await session.commit()
+    return result
+
+
+async def _load_state(state: GraphState, session: Any) -> dict[str, Any]:
+    """load_session_state 的实际逻辑（由包装函数负责提交）。"""
     tenant_id = state["tenant_id"]
     session_id = state["session_id"]
 
