@@ -7,6 +7,7 @@ LLM 润色路径的多语言由 prompt 的「按用户语言回复」指令处�
 from typing import Any
 
 from app.chat.graph.state import GraphState
+from app.chat.intent.types import IntentLabel
 from app.chat.skills.llm_responder import polish_reply
 from app.chat.skills.registry import skill_registry
 from app.chat.skills.responder import render_reply
@@ -55,6 +56,20 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
     # 追问超限放弃任务：给明确的放弃+转人工建议话术（Stage 10 流转治理）
     if state.get("task_gave_up"):
         return {"reply": t("task.gave_up", locale), "graph_trace": ["response_generate"]}
+    # 智能澄清（Stage 21）：意图不明轮次用 top_k 候选 + 近期对话生成针对性
+    # 澄清问句替代固定模板；失败/无 Key 走原模板（零回归）。
+    # 不过 polish——问句本身已是 LLM 输出，二次润色浪费且可能改坏选项
+    if status == TurnStatus.FALLBACK and final_intent == IntentLabel.META_UNKNOWN:
+        from app.chat.skills.llm_clarifier import generate_clarify_question
+
+        question = await generate_clarify_question(
+            state.get("normalized_text", ""),
+            intent_dict.get("top_k") or [],
+            state.get("memory"),
+            locale,
+        )
+        if question:
+            return {"reply": question, "graph_trace": ["response_generate:clarify"]}
     draft = render_reply(status, skill, collected, locale)
     # L3 弱确认降级（Stage 13）：明确告知需回复「确认」，避免「好的」被误当放行
     if state.get("weak_confirm_recheck"):

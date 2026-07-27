@@ -126,6 +126,24 @@ async def rag_answer(state: GraphState, config: RunnableConfig) -> dict[str, Any
             "graph_trace": ["rag_answer"],
         }
 
+    # 智能澄清（Stage 21）：UNKNOWN 兜底检索也拒答时，用 top_k 候选 + 近期
+    # 对话生成针对性澄清问句；失败降级下方固定模板。
+    # answer_source 维持 "refused"（count_rag 指标口径不变），trace 标 clarify
+    if final_intent == IntentLabel.META_UNKNOWN:
+        from app.chat.skills.llm_clarifier import generate_clarify_question
+
+        question = await generate_clarify_question(
+            query, intent_dict.get("top_k") or [], state.get("memory"), state.get("locale")
+        )
+        if question:
+            trace_dict["clarify"] = True
+            return {
+                "reply": question,
+                "answer_source": "refused",
+                "retrieval": trace_dict,
+                "graph_trace": ["rag_answer:clarify"],
+            }
+
     # 拒答/未命中：FAQ 意图给「需核实」话术，UNKNOWN 维持澄清话术。
     # 检索轨迹（含未达阈值的命中分数）仍完整落库，供排查与调阈值
     skill = skill_registry.get(final_intent or IntentLabel.META_UNKNOWN)

@@ -56,6 +56,9 @@
 | 18 | A/B 实验框架 | 📝 需求已写（框架可落地，结论待流量） | 确定性 hash 分桶、变体只覆盖已有可配项、decision_log 落变体、按变体切分 quality_daily 对比 |
 | 19 | 多语言地基（i18n） | ✅ 已实现（2026-07-04） | 面向用户文案收口 `app/core/i18n.py`+`app/locales/`（中文源逐字零回归、en 骨架示范）、skill 模板语言覆盖、LLM 提示词加「按用户语言回复」（不翻译提示词）、locale 贯穿（请求＞会话记忆＞默认，写入 metadata 沿用）；输出侧地基完成，输入理解侧（分类/词表）待数据 |
 | 15 | 体验闭环 | ✅ 已实现（2026-07-04） | WS 双端实时（用户端 agent_reply/session_resumed/proactive、坐席端 ticket_created/user_message；Redis Pub/Sub 跨进程 + 故障本地直投）、会话级 CSAT（chat_csat 表 + 短路捕获 + quality_daily csat 列 + 低分回流）、会话生命周期（idle 关闭+重开、ASSIGNED 超时 CLOSED 补 Stage 07 遗留，close_idle_sessions CLI）、排队位置反馈、主动消息 notify 入口 |
+| 20 | 记忆摘要 v2 | ✅ 已实现（2026-07-21） | 结构化会话摘要（固定 schema JSON、数组/总长编译时上界、解析失败纯文本降级、存量兼容）、单一表示不变式回归锁定、MCP 大结果红线（doc-only） |
+| — | Post-Stage 20 全链路 Review 加固 | ✅ 已实现（2026-07-27） | 六批整改（意图控制层/正确性/容量/延迟/演进/RAG 强化 WeKnora 对齐），274→300 tests，详见 `docs/requirements/post-stage-20-review-hardening/` |
+| 21 | 智能澄清 | ✅ 已实现（2026-07-27） | UNKNOWN 轮次 LLM 生成针对性澄清问句（top_k 候选+近期对话），替代固定模板；无 Key 降级零回归；unknown_streak 安全网不动；三层演进（澄清→只读诊断 agent→离线 deep agent）的第一层 |
 
 > 依赖关系：04 是 05/06 的前置（都需要 LLM Provider 工厂）；05 与 06 可并行；
 > 07 依赖 05（工单是写操作）；08 可随时插入，越早越好；09 从 04 起持续建设。

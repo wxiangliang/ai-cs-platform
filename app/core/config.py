@@ -230,6 +230,13 @@ class Settings(BaseSettings):
     # 独立明确的检索查询再检索（「刚才那个多少钱」→「AP-300 空气净化器价格」）。
     # 无 Key 自动失效（零回归）；改写轮次绕过语义缓存（结果依赖对话上下文）
     RAG_QUERY_REWRITE_ENABLED: bool = True
+
+    # ----- Stage 21 智能澄清 -----
+    # UNKNOWN 轮次用 LLM 生成针对性澄清问句（结合 top_k 候选与近期对话），
+    # 替代固定澄清模板；无 Key/失败降级模板（零回归）
+    CLARIFY_LLM_ENABLED: bool = True
+    # top_k 候选进入澄清 prompt 的最低置信分（宽松下限——低置信正是本场景）
+    CLARIFY_MIN_CANDIDATE_SCORE: float = 0.15
     # 父子分块：命中块按章节聚合上下文的字符上限
     RAG_SECTION_CONTEXT_CHARS: int = 1200
     # 分块参数（字符数口径）

@@ -64,7 +64,7 @@ async def rewrite_vague_query(query: str, memory: dict | None) -> str | None:
         f"最近对话：\n{turns}\n\n用户问题：{wrap_user_input(query)}",
         purpose="classify",
     )
-    if not raw:
+    if not raw or not raw.strip():
         return None
     # 输出治理：取首行、限长；与原文相同视为无需改写
     rewritten = raw.strip().splitlines()[0].strip().strip("\"'「」")
