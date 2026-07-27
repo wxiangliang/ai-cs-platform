@@ -53,3 +53,33 @@ async def test_good_hit_extractive_fallback_without_llm(monkeypatch, _no_llm):
     assert "签收后7天内可无理由退货" in result.reply
     assert "《退换货政策》" in result.reply
     assert result.citations == ["《退换货政策》"]
+
+
+async def test_query_embedding_computed_once(monkeypatch, _no_llm):
+    """embedding 去重（延迟修复）：answer 入口算一次查询向量，FAQ 层与文档层复用。"""
+    calls = {"n": 0}
+
+    class _CountingEmbed:
+        async def embed(self, texts):
+            calls["n"] += 1
+            return [[0.1, 0.2, 0.3]]
+
+    monkeypatch.setattr("app.kb.answerer.embedding_client", _CountingEmbed())
+    seen_vecs = []
+
+    async def _no_faq(session, tenant_id, query, trace, query_vec=None):
+        seen_vecs.append(query_vec)
+        return None
+
+    async def _no_hits(session, tenant_id, query, trace, query_vec=None):
+        seen_vecs.append(query_vec)
+        return []
+
+    monkeypatch.setattr(kb_retriever, "search_faq", _no_faq)
+    monkeypatch.setattr(kb_retriever, "search_chunks", _no_hits)
+
+    result, trace = await rag_answerer.answer(None, "t1", "退货政策")
+
+    assert result is None and trace.refused is True  # 无命中拒答
+    assert calls["n"] == 1, "查询向量应只计算一次"
+    assert seen_vecs == [[0.1, 0.2, 0.3], [0.1, 0.2, 0.3]]  # 两层收到同一向量

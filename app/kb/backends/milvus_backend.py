@@ -7,6 +7,7 @@
 - tenant_id 在 filter 里强制注入，且做白名单转义防表达式注入。
 """
 
+import asyncio
 import re
 
 from app.core.config import settings
@@ -34,41 +35,79 @@ class MilvusBackend:
 
     def __init__(self) -> None:
         self._client = None
+        self._sync_client = None  # 同步轻量客户端（存在性检查/健康探活复用）
         self._ready_collections: set[str] = set()
+        self._init_lock: asyncio.Lock | None = None
+        self._init_lock_loop: asyncio.AbstractEventLoop | None = None
+
+    def _lock(self) -> asyncio.Lock:
+        """初始化互斥锁（按事件循环懒建，测试切换 loop 时重建）。"""
+        loop = asyncio.get_running_loop()
+        if self._init_lock is None or self._init_lock_loop is not loop:
+            self._init_lock = asyncio.Lock()
+            self._init_lock_loop = loop
+        return self._init_lock
 
     async def _get_client(self):
-        """懒加载 AsyncMilvusClient（进程内复用，带超时配置）。"""
-        if self._client is None:
-            from pymilvus import AsyncMilvusClient
+        """懒加载 AsyncMilvusClient（进程内复用，带超时配置）。
 
-            self._client = AsyncMilvusClient(
-                uri=settings.MILVUS_URI,
-                token=settings.MILVUS_TOKEN or "",
-                timeout=settings.MILVUS_TIMEOUT,
-            )
+        加锁修复并发竞态：进程启动后首批请求并发到达时，无锁的
+        check-then-create 会创建多个客户端实例互相覆盖、泄漏连接。
+        """
+        if self._client is None:
+            async with self._lock():
+                if self._client is None:
+                    from pymilvus import AsyncMilvusClient
+
+                    self._client = AsyncMilvusClient(
+                        uri=settings.MILVUS_URI,
+                        token=settings.MILVUS_TOKEN or "",
+                        timeout=settings.MILVUS_TIMEOUT,
+                    )
         return self._client
 
+    def _get_sync_client(self):
+        """同步轻量客户端单例（AsyncMilvusClient 未提供 has_collection/list）。
+
+        修复：此前存在性检查与每次 health() 都新建+关闭一个同步客户端
+        （readinessProbe 秒级轮询 = 每秒一次全新 TCP 连接）。
+        同步网络调用，调用方必须放 asyncio.to_thread 执行。
+        """
+        if self._sync_client is None:
+            from pymilvus import MilvusClient
+
+            self._sync_client = MilvusClient(
+                uri=settings.MILVUS_URI, token=settings.MILVUS_TOKEN or ""
+            )
+        return self._sync_client
+
     async def _ensure_collection(self, name: str) -> None:
-        """collection 不存在则用快速模式创建（string 主键 + COSINE + 动态字段）。"""
+        """collection 不存在则用快速模式创建（string 主键 + COSINE + 动态字段）。
+
+        加锁：并发首访时只允许一个协程做存在性检查与建表；
+        同步存在性检查放线程池，不阻塞事件循环（冷启动首请求修复）。
+        """
         if name in self._ready_collections:
             return
+        # 客户端获取在锁外：_get_client 内部要拿同一把锁（不可重入，锁内调用会死锁）
         client = await self._get_client()
-        from pymilvus import MilvusClient
-
-        # 存在性检查走同步轻量客户端（AsyncMilvusClient 未提供 has_collection）
-        sync = MilvusClient(uri=settings.MILVUS_URI, token=settings.MILVUS_TOKEN or "")
-        if not sync.has_collection(name):
-            await client.create_collection(
-                collection_name=name,
-                dimension=settings.EMBEDDING_DIM,
-                metric_type="COSINE",
-                id_type="string",
-                max_length=64,
-                auto_id=False,
+        async with self._lock():
+            if name in self._ready_collections:
+                return
+            exists = await asyncio.to_thread(
+                lambda: self._get_sync_client().has_collection(name)
             )
-            logger.info("milvus collection created: %s dim=%s", name, settings.EMBEDDING_DIM)
-        sync.close()
-        self._ready_collections.add(name)
+            if not exists:
+                await client.create_collection(
+                    collection_name=name,
+                    dimension=settings.EMBEDDING_DIM,
+                    metric_type="COSINE",
+                    id_type="string",
+                    max_length=64,
+                    auto_id=False,
+                )
+                logger.info("milvus collection created: %s dim=%s", name, settings.EMBEDDING_DIM)
+            self._ready_collections.add(name)
 
     # ------------------------------------------------------------------
     # 写入 / 删除
@@ -163,13 +202,15 @@ class MilvusBackend:
         return hits
 
     async def health(self) -> bool:
-        """健康检查：列 collection 能通即认为可用。"""
-        try:
-            from pymilvus import MilvusClient
+        """健康检查：列 collection 能通即认为可用。
 
-            sync = MilvusClient(uri=settings.MILVUS_URI, token=settings.MILVUS_TOKEN or "")
-            sync.list_collections()
-            sync.close()
+        复用同步客户端单例并放线程池执行——此前每次探活新建+关闭一个客户端
+        且同步阻塞事件循环（k8s readinessProbe 按秒轮询时尤其有害）。
+        失败后重置单例，下次探活重建连接（自愈）。
+        """
+        try:
+            await asyncio.to_thread(lambda: self._get_sync_client().list_collections())
             return True
         except Exception:  # noqa: BLE001 - 健康检查失败只返回状态
+            self._sync_client = None
             return False

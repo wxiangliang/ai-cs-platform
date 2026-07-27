@@ -48,6 +48,20 @@ async def lifespan(app: FastAPI):
     async with _ProbeSession() as _probe:
         await _probe.execute(_sql_text("SELECT 1"))
     logger.info("PostgreSQL connectivity verified.")
+    # 冷启动预热（延迟修复）：jieba 词典构建（~1s 同步 CPU）与本地重排模型加载
+    # （数秒到数十秒）不预热会打在首个检索请求上，且阻塞事件循环影响同批请求
+    if settings.KB_ENABLED:
+        import asyncio as _asyncio
+
+        import jieba as _jieba
+
+        await _asyncio.to_thread(_jieba.initialize)
+        logger.info("jieba dictionary warmed up.")
+        if settings.RERANKER_PROVIDER == "local":
+            from app.kb.rerank import _local_reranker
+
+            await _asyncio.to_thread(_local_reranker._ensure_loaded)
+            logger.info("local reranker warmed up.")
     yield
     # ----- shutdown -----
     logger.info("Shutting down %s...", settings.APP_NAME)

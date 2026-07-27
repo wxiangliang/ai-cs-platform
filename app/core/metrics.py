@@ -28,6 +28,15 @@ CHAT_TURN_DURATION = Histogram(
     buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0),
 )
 
+# 知识检索分段耗时：定位链路热点（stage=embed/vector/keyword/rerank/sections/llm/cache_lookup）
+# 没有它，各阶段的相对权重只能靠读代码推断，优化收益无法在线上验证
+KB_STAGE_DURATION = Histogram(
+    "kb_stage_duration_seconds",
+    "知识检索管道各阶段耗时（秒）",
+    ["stage"],
+    buckets=(0.005, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 15.0),
+)
+
 # 意图决策：观测 SETFIT / LLM / 规则 / 降级来源占比
 INTENT_DECISIONS = Counter(
     "intent_decisions_total",
@@ -141,6 +150,11 @@ def count_semantic_cache(outcome: str) -> None:
 def count_rag(outcome: str) -> None:
     """记录一次 RAG 检索结局（rag_answer 节点收口调用）。"""
     RAG_RETRIEVALS.labels(outcome=outcome).inc()
+
+
+def observe_kb_stage(stage: str, seconds: float) -> None:
+    """记录知识检索某阶段的耗时（retriever/answerer 打点）。"""
+    KB_STAGE_DURATION.labels(stage=stage).observe(seconds)
 
 
 def count_confirm_gate(outcome: str) -> None:

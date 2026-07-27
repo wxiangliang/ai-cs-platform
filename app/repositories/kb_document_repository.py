@@ -22,6 +22,17 @@ class KbDocumentRepository(BaseRepository[KbDocument]):
         )
         return await self._first(session, stmt)
 
+    async def get_by_ids(
+        self, session: AsyncSession, tenant_id: str, document_ids: list[str]
+    ) -> list[KbDocument]:
+        """批量按 id 查询文档（租户隔离；检索水合用，替代循环单查）。"""
+        if not document_ids:
+            return []
+        stmt = select(KbDocument).where(
+            KbDocument.tenant_id == tenant_id, KbDocument.id.in_(document_ids)
+        )
+        return await self._all(session, stmt)
+
     async def list_active(
         self, session: AsyncSession, tenant_id: str, limit: int = 500
     ) -> list[KbDocument]:

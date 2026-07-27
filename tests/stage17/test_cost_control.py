@@ -210,6 +210,60 @@ async def test_cache_skips_non_cacheable_source(_redis, monkeypatch):
     assert await cache.lookup(tenant, q) is None
 
 
+async def test_cache_skips_personalized_entry(_redis, monkeypatch):
+    """个性化回答（注入过用户记忆）不写租户共享缓存 → 防跨用户泄漏红线。"""
+    monkeypatch.setattr(settings, "SEMANTIC_CACHE_ENABLED", True)
+    cache = RedisSemanticCache()
+    tenant, q = _tenant(), "退货运费谁承担"
+    await cache.store(
+        tenant, q,
+        {"reply": "您的 iPhone 15 订单可免运费退货", "source": "rag_llm",
+         "citations": [], "personalized": True},
+    )
+    assert await cache.lookup(tenant, q) is None
+
+
+async def test_rag_answer_personalized_flag():
+    """RagAnswer.personalized：仅「LLM 生成 + 注入了长期事实」的回答被标记。
+
+    锁定 rag_answer 节点跳过写缓存的判定依据（跨用户泄漏修复回归）。
+    """
+    from app.kb.answerer import RagAnswerer
+    from app.kb.retriever import kb_retriever
+    from app.kb.types import Hit
+
+    answerer = RagAnswerer()
+    hit = Hit(
+        id="c1", score=0.95, source_backend="milvus",
+        document_id="d1", title="退货政策", content="七天无理由",
+    )
+
+    async def _no_faq(session, tenant_id, query, trace, query_vec=None):
+        return None
+
+    async def _hits(session, tenant_id, query, trace, query_vec=None):
+        return [hit]
+
+    async def _gen(query, hits, memory=None):
+        return "生成的回答"
+
+    import unittest.mock as mock
+
+    with (
+        mock.patch.object(kb_retriever, "search_faq", _no_faq),
+        mock.patch.object(kb_retriever, "search_chunks", _hits),
+        mock.patch.object(RagAnswerer, "_generate", staticmethod(_gen)),
+    ):
+        # 注入了长期事实 → personalized，禁止进共享缓存
+        answer, _ = await answerer.answer(
+            None, "t1", "退货运费", memory={"long_term_facts": ["用户买过 iPhone 15"]}
+        )
+        assert answer is not None and answer.personalized is True
+        # 无记忆 → 可缓存
+        answer, _ = await answerer.answer(None, "t1", "退货运费", memory=None)
+        assert answer is not None and answer.personalized is False
+
+
 async def test_cache_disabled_returns_none(_redis, monkeypatch):
     monkeypatch.setattr(settings, "SEMANTIC_CACHE_ENABLED", False)
     cache = RedisSemanticCache()
