@@ -74,6 +74,7 @@ docs/
     stage-21-smart-clarification/01_smart_clarification.md      # ✅ 已实现（智能澄清：UNKNOWN 轮次 top_k+上下文生成针对性澄清问句，无 Key 降级零回归，附录有实现记录）
     stage-22-readonly-diagnose-agent/01_readonly_diagnose_agent.md # ✅ 已实现（只读诊断 agent：ReAct 受约束变体，query_* 白名单+结构性终止+数字事实校验，默认关，附录有实现记录）
     stage-23-direction-correction/01_direction_correction.md    # ✅ 已实现（方向纠偏：任务中途否定/零进度恢复降调/中置信软确认，纯规则零 LLM 依赖，附录有实现记录）
+    post-stage-23-backend-roadmap/01_backend_next_steps.md      # 📋 规划文档（后端下一步：真实化 A1-A4 → 生产化 B1-B3 → 补全 C1-C6，功能建设收口）
 
   database/
     chat_tables.md                  # 核心表设计 v2（字段类型/枚举/外键决策）
