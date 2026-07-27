@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.chat.llm.budget import set_current_tenant
+from app.chat.llm.deadline import clear_turn_budget
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -16,6 +17,21 @@ logger = get_logger(__name__)
 _PENDING_KEY = "_memory_write_pending"
 _HOOKED_KEY = "_memory_write_hooked"
 _pending_tasks: set[asyncio.Task[None]] = set()
+
+# 后台记忆任务并发闸（容量修复）：每轮派生一个任务，无上限时与请求
+# 争抢同一 DB 连接池和 LLM 额度。按事件循环懒建（测试会切换 loop）
+_semaphore: asyncio.Semaphore | None = None
+_semaphore_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    """取当前事件循环上的并发闸（loop 变更时重建）。"""
+    global _semaphore, _semaphore_loop
+    loop = asyncio.get_running_loop()
+    if _semaphore is None or _semaphore_loop is not loop:
+        _semaphore = asyncio.Semaphore(max(1, settings.MEMORY_TASK_CONCURRENCY))
+        _semaphore_loop = loop
+    return _semaphore
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,16 +117,20 @@ async def _remember_safe(request: MemoryWriteRequest) -> None:
     try:
         from app.chat.memory.factory import get_memory_provider
 
-        # after_commit 创建新 Task 时显式恢复预算租户归属，避免依赖调用栈上下文。
-        set_current_tenant(request.tenant_id)
-        await get_memory_provider().remember(
-            request.tenant_id,
-            request.user_id,
-            request.session_id,
-            request.user_text,
-            request.reply,
-            request.intent,
-        )
+        # 并发闸：同时执行的记忆任务有上限，超出的在此排队（不占 DB/LLM 资源）
+        async with _get_semaphore():
+            # after_commit 创建新 Task 时显式恢复预算租户归属，避免依赖调用栈上下文；
+            # 清除继承自请求的轮级 LLM 预算——轮次已结束，过期 deadline 会饿死记忆 LLM
+            set_current_tenant(request.tenant_id)
+            clear_turn_budget()
+            await get_memory_provider().remember(
+                request.tenant_id,
+                request.user_id,
+                request.session_id,
+                request.user_text,
+                request.reply,
+                request.intent,
+            )
     except Exception:  # noqa: BLE001 - 记忆是 best-effort 增强层
         logger.exception("memory remember failed: session=%s", request.session_id)
 

@@ -7,6 +7,7 @@
   LLM 永远是增强层，不是主链路的硬依赖。
 """
 
+import asyncio
 from functools import lru_cache
 from typing import Any, Literal
 
@@ -15,10 +16,11 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-Purpose = Literal["classify", "generate"]
+Purpose = Literal["classify", "generate", "rag"]
 
-# 按用途区分的采样温度：分类要确定性，生成要一点自然度
-_TEMPERATURE: dict[str, float] = {"classify": 0.0, "generate": 0.7}
+# 按用途区分的采样温度：分类要确定性，生成要一点自然度，
+# RAG 生成偏保守（忠于检索资料，少发挥）
+_TEMPERATURE: dict[str, float] = {"classify": 0.0, "generate": 0.7, "rag": 0.3}
 
 
 def llm_available() -> bool:
@@ -30,7 +32,7 @@ def _model_for_purpose(purpose: Purpose) -> str:
     """按用途选模型 tier（Stage 17 分级路由）。
 
     classify（意图二判/槽位抽取/短润色）走 fast 小模型；
-    generate（RAG 生成/复杂润色）走 smart 大模型。
+    generate（润色）/ rag（知识生成，属难例）走 smart 大模型。
     未配置对应 tier 时回落到 CHAT_MODEL，行为不变（零回归）。
     """
     if purpose == "classify":
@@ -65,12 +67,17 @@ async def chat_completion(system: str, user: str, purpose: Purpose = "generate")
     if not llm_available():
         return None
     from app.chat.llm.budget import account_llm_result, get_current_tenant, is_over_budget
+    from app.chat.llm.deadline import budget_exhausted, remaining_budget
     from app.core.metrics import count_llm_budget_exceeded, count_llm_call
 
     # 预算熔断（Stage 17）：当前租户当日超预算 → 与无 Key 同路径降级到模板/规则
     tenant = get_current_tenant()
     if await is_over_budget(tenant):
         count_llm_budget_exceeded(tenant)
+        return None
+    # 轮级时间预算（容量修复）：本轮 LLM 时间已用尽 → 直接降级，不再排队等超时
+    if budget_exhausted():
+        logger.warning("turn llm budget exhausted, degrade (purpose=%s)", purpose)
         return None
 
     try:
@@ -86,9 +93,15 @@ async def chat_completion(system: str, user: str, purpose: Purpose = "generate")
             invoke_config["callbacks"] = [handler]
 
         model = get_chat_model(purpose)
-        result = await model.ainvoke(
+        # 单次调用以剩余轮预算为外层超时：客户端内部 timeout×重试可能远超剩余预算，
+        # wait_for 兜底后走 except 降级（TimeoutError 同样落 ok=False）
+        coro = model.ainvoke(
             [SystemMessage(content=system), HumanMessage(content=user)],
             config=invoke_config,  # type: ignore[arg-type]
+        )
+        remaining = remaining_budget()
+        result = await (
+            asyncio.wait_for(coro, timeout=remaining) if remaining is not None else coro
         )
         text = result.content if isinstance(result.content, str) else ""
         count_llm_call(purpose, ok=True)

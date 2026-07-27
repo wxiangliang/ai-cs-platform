@@ -20,6 +20,7 @@ from sqlalchemy.orm.exc import StaleDataError
 
 from app.chat.graph.builder import get_chat_graph
 from app.chat.llm.budget import set_current_tenant
+from app.chat.llm.deadline import start_turn_budget
 from app.chat.logging.decision_logger import build_log_data, decision_logger
 from app.chat.memory.scheduler import (
     enqueue_memory_after_commit,
@@ -74,6 +75,9 @@ class ChatService:
         # 预算归属（Stage 17）：写入当前租户，供 LLM 收口计量与熔断；
         # 提交后记忆任务会显式恢复租户上下文
         set_current_tenant(tenant_id)
+        # 轮级 LLM 时间预算（容量修复）：本轮所有 LLM 调用共享 deadline，
+        # 耗尽后各调用点走既有降级路径（与无 Key 同路径），单轮时长有界
+        start_turn_budget()
 
         # A/B 实验分流（Stage 18）：确定性分桶命中变体，把参数覆盖写入 contextvar
         # （白名单消费点经 effective() 读取），分配落 state 供 decision_log 切分；
