@@ -94,6 +94,14 @@ START
   → END
 ```
 
+blocked 条件边（post-stage-20）：load_session_state（接管静默/CSAT 捕获）与
+guardrail_check（护栏拦截）后各有一条到 response_generate 的短路边——blocked
+轮次不再空跑中间透传节点，决策日志 graph_trace 反映真实执行路径。
+
+事务纪律（post-stage-20 容量修复）：load_session_state 结束与 RAG 检索完成后
+各提交一次，连接随 commit 归还池——中段 LLM 调用期间不持有任何 DB 连接；
+并发正确性由 chat_dialog_state 乐观锁在 save_turn 提交时把关（冲突 409）。
+
 ---
 
 ## 5. 对话状态机

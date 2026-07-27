@@ -70,6 +70,7 @@ docs/
     stage-18-ab-experiments/01_experiment_framework.md          # ✅ 已实现（A/B 实验框架：确定性分桶/变体注入/对比 SQL，附录有实现记录，零回归）
     stage-19-i18n-foundation/01_i18n_and_prompt_localization.md # ✅ 已实现（多语言地基：i18n 收口+提示词国际化，零回归）
     stage-20-memory-v2/01_structured_summary_and_context_discipline.md # ✅ 已实现（结构化会话摘要/单一表示不变式测试/MCP 大结果红线，附录有实现记录，零回归）
+    post-stage-20-review-hardening/01_review_hardening_record.md # ✅ 实现记录（2026-07-27 全链路 review 六批整改：意图控制层/正确性/容量/延迟/演进/RAG 强化 WeKnora 对齐，274→300 tests）
 
   database/
     chat_tables.md                  # 核心表设计 v2（字段类型/枚举/外键决策）
