@@ -1,6 +1,9 @@
 """chat_session 数据访问层。"""
 
-from sqlalchemy import select
+from typing import Any
+
+from sqlalchemy import cast, func, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat_session import ChatSession
@@ -28,6 +31,43 @@ class ChatSessionRepository(BaseRepository[ChatSession]):
             .limit(limit)
         )
         return await self._all(session, stmt)
+
+    async def merge_metadata(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        session_id: str,
+        patch: dict[str, Any],
+        *,
+        expect_summary_covered: int | None = None,
+    ) -> bool:
+        """按顶层键合并 metadata_json（JSONB `||`），不整 dict 覆盖。
+
+        并发安全（Stage 20 摘要写覆盖修复）：
+        - 只更新 patch 中出现的键，并发事务写入的其他键（如 locale）不受影响；
+        - expect_summary_covered 非 None 时做 CAS：行内 memory_summary_covered
+          与预期不符则放弃更新（返回 False）——两个并发摘要任务只有先到者生效，
+          后者下一轮按新游标重新增量，不会互相覆盖摘要与游标。
+        """
+        stmt = (
+            update(ChatSession)
+            .where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
+            .values(
+                metadata_json=func.coalesce(ChatSession.metadata_json, cast({}, JSONB)).op(
+                    "||"
+                )(cast(patch, JSONB))
+            )
+        )
+        if expect_summary_covered is not None:
+            # 键不存在时 ->> 为 NULL，coalesce 成 '0' 与初始游标对齐
+            stmt = stmt.where(
+                func.coalesce(
+                    ChatSession.metadata_json["memory_summary_covered"].astext, "0"
+                )
+                == str(expect_summary_covered)
+            )
+        result = await session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0) == 1
 
     async def update_status(
         self,

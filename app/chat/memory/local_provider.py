@@ -162,7 +162,13 @@ class LocalMemoryProvider:
         （cut = total - MEMORY_SHORT_TERM_TURNS）——同一条消息**禁止**同时以
         「摘要」和「窗口原文」两种形态进入同一个 prompt。改窗口/阈值参数不得打破
         （tests/stage20 有回归测试锁定）。
+
+        事务纪律（并发写覆盖修复）：读短事务 → LLM 调用不持有任何 DB 连接 →
+        写回用 JSONB 顶层合并 + covered CAS 的单条 UPDATE。
+        不整 dict 覆盖：请求事务并发写入的 locale 等键不会被摘要任务冲掉；
+        并发摘要任务只有先完成者生效（后者 CAS 不中放弃，下一轮按新游标增量）。
         """
+        # —— 读阶段（短事务）：取历史与既有摘要后立即释放连接 ——
         async with AsyncSessionLocal() as session:
             history = await chat_message_repository.list_by_session_id(
                 session, tenant_id, session_id, limit=500
@@ -179,45 +185,57 @@ class LocalMemoryProvider:
             cut = total - settings.MEMORY_SHORT_TERM_TURNS
             if cut <= covered:
                 return
-            chunk = history[covered:cut]
+            # 滚动步长（成本修复）：增量不足步长先不续写——否则超阈值后**每轮**
+            # 都会触发一次 LLM 摘要（cut 每轮 +2 恒大于 covered）。
+            # 首次摘要（covered=0）不受限，保证阈值一到就建立摘要
+            if covered > 0 and cut - covered < settings.MEMORY_SUMMARY_STEP:
+                return
+            lines = "\n".join(f"{m.role}: {m.content[:150]}" for m in history[covered:cut])
             # 既有摘要可能是结构化 dict（新）或纯文本（存量），统一转文本给 LLM 续写
             old_raw = meta.get("memory_summary")
-            old_text = (
-                json.dumps(old_raw, ensure_ascii=False)
-                if isinstance(old_raw, dict)
-                else str(old_raw or "")
-            )
-            lines = "\n".join(f"{m.role}: {m.content[:150]}" for m in chunk)
-            # 对话增量含用户原文，经防注入包裹（Stage 14）：数据而非指令
-            user = f"既有摘要：{old_text or '（无）'}\n\n对话增量：\n{wrap_user_input(lines)}"
-            new_summary = await chat_completion(_SUMMARY_SYSTEM, user, purpose="classify")
-            if not new_summary:
-                return
-            from app.chat.guardrail.engine import guardrail_engine
 
-            parsed = _parse_summary(new_summary)
-            if parsed is not None and (normalized := _normalize_summary(parsed)):
-                # 结构化路径：裁剪后仍超总长上界 → 拒写保留旧摘要（covered 不推进，下轮重试）
-                if len(json.dumps(normalized, ensure_ascii=False)) > _SUMMARY_MAX_CHARS:
-                    logger.warning("structured summary over budget, keep old summary")
-                    return
-                # 写入前过输出护栏（Stage 14）：防注入串经摘要固化进记忆被反复注入
-                if guardrail_engine.check_output(_render_summary(normalized)):
-                    logger.warning("memory summary guardrail hit, skip update")
-                    return
-                meta["memory_summary"] = normalized
-                meta["summary_format"] = "json"
-            else:
-                # 降级路径：LLM 输出不是合法 JSON → 按旧版纯文本原样存储，不重试不报错
-                text = new_summary.strip()[:_SUMMARY_MAX_CHARS]
-                if guardrail_engine.check_output(text):
-                    logger.warning("memory summary guardrail hit, skip update")
-                    return
-                meta["memory_summary"] = text
-                meta["summary_format"] = "text"
-            meta["memory_summary_covered"] = cut
-            chat_session.metadata_json = meta
+        # —— LLM 阶段（不持有 DB 连接）：慢调用不占用连接池 ——
+        old_text = (
+            json.dumps(old_raw, ensure_ascii=False)
+            if isinstance(old_raw, dict)
+            else str(old_raw or "")
+        )
+        # 对话增量含用户原文，经防注入包裹（Stage 14）：数据而非指令
+        user = f"既有摘要：{old_text or '（无）'}\n\n对话增量：\n{wrap_user_input(lines)}"
+        new_summary = await chat_completion(_SUMMARY_SYSTEM, user, purpose="classify")
+        if not new_summary:
+            return
+        from app.chat.guardrail.engine import guardrail_engine
+
+        patch: dict[str, Any]
+        parsed = _parse_summary(new_summary)
+        if parsed is not None and (normalized := _normalize_summary(parsed)):
+            # 结构化路径：裁剪后仍超总长上界 → 拒写保留旧摘要（covered 不推进，下轮重试）
+            if len(json.dumps(normalized, ensure_ascii=False)) > _SUMMARY_MAX_CHARS:
+                logger.warning("structured summary over budget, keep old summary")
+                return
+            # 写入前过输出护栏（Stage 14）：防注入串经摘要固化进记忆被反复注入
+            if guardrail_engine.check_output(_render_summary(normalized)):
+                logger.warning("memory summary guardrail hit, skip update")
+                return
+            patch = {"memory_summary": normalized, "summary_format": "json"}
+        else:
+            # 降级路径：LLM 输出不是合法 JSON → 按旧版纯文本原样存储，不重试不报错
+            text = new_summary.strip()[:_SUMMARY_MAX_CHARS]
+            if guardrail_engine.check_output(text):
+                logger.warning("memory summary guardrail hit, skip update")
+                return
+            patch = {"memory_summary": text, "summary_format": "text"}
+        patch["memory_summary_covered"] = cut
+
+        # —— 写阶段（短事务 + CAS）：合并写入，游标被并发任务推进则放弃 ——
+        async with AsyncSessionLocal() as session:
+            updated = await chat_session_repository.merge_metadata(
+                session, tenant_id, session_id, patch, expect_summary_covered=covered
+            )
             await session.commit()
+        if not updated:
+            logger.info("memory summary skipped: concurrent writer won, session=%s", session_id)
 
     async def _extract_facts(
         self, tenant_id: str, user_id: str, session_id: str, user_text: str, reply: str

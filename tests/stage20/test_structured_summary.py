@@ -158,6 +158,7 @@ async def test_over_budget_rejected_keeps_old_summary(monkeypatch, seed):
     tenant, _, sid = await seed(6)
     monkeypatch.setattr(settings, "MEMORY_SUMMARY_THRESHOLD", 2)
     monkeypatch.setattr(settings, "MEMORY_SHORT_TERM_TURNS", 2)
+    monkeypatch.setattr(settings, "MEMORY_SUMMARY_STEP", 2)  # 本测试关注超长拒写，不关步长
     old_meta = {
         "memory_summary": {"request": "旧诉求"},
         "summary_format": "json",
@@ -182,6 +183,7 @@ async def test_single_representation_invariant(monkeypatch, seed, window, thresh
     tenant, user, sid = await seed(total)
     monkeypatch.setattr(settings, "MEMORY_SUMMARY_THRESHOLD", threshold)
     monkeypatch.setattr(settings, "MEMORY_SHORT_TERM_TURNS", window)
+    monkeypatch.setattr(settings, "MEMORY_SUMMARY_STEP", 2)  # 本测试关注不变式，逐轮滚动
     mock = _fake_llm(monkeypatch, VALID_SUMMARY_JSON)
 
     await local_memory_provider._maybe_summarize(tenant, sid)
@@ -234,3 +236,93 @@ def test_render_summary_units():
         {"request": "查订单", "entities": ["ORD1", "ORD2"], "pending": ["等地址"]}
     )
     assert rendered == "诉求：查订单；涉及：ORD1、ORD2；待办：等地址"
+
+
+# ---------------- 并发写覆盖修复（merge_metadata + CAS）----------------
+
+
+async def test_summary_preserves_concurrent_locale_write(monkeypatch, seed):
+    """摘要 LLM 等待期间请求事务写入 locale → 合并写不冲掉它（修复前整 dict 覆盖丢失）。"""
+    tenant, user, sid = await seed(6)
+    monkeypatch.setattr(settings, "MEMORY_SUMMARY_THRESHOLD", 2)
+    monkeypatch.setattr(settings, "MEMORY_SHORT_TERM_TURNS", 2)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "fake")
+
+    async def _llm_with_concurrent_write(system, user_msg, purpose="classify"):
+        # 模拟 LLM 等待窗口内，另一事务更新会话 locale
+        async with AsyncSessionLocal() as s:
+            record = await chat_session_repository.get_by_id(s, sid)
+            m = dict(record.metadata_json or {})
+            m["locale"] = "en"
+            record.metadata_json = m
+            await s.commit()
+        return VALID_SUMMARY_JSON
+
+    monkeypatch.setattr(
+        "app.chat.memory.local_provider.chat_completion", _llm_with_concurrent_write
+    )
+    await local_memory_provider._maybe_summarize(tenant, sid)
+
+    meta = await _get_meta(sid)
+    assert meta["locale"] == "en"  # 并发写入的键存活
+    assert meta["summary_format"] == "json"  # 摘要也成功写入
+    assert meta["memory_summary_covered"] == 4
+
+
+async def test_summary_cas_first_writer_wins(monkeypatch, seed):
+    """两个并发摘要任务：先完成者生效，后者 CAS 不中放弃（游标与摘要不被回退覆盖）。"""
+    tenant, user, sid = await seed(6)
+    monkeypatch.setattr(settings, "MEMORY_SUMMARY_THRESHOLD", 2)
+    monkeypatch.setattr(settings, "MEMORY_SHORT_TERM_TURNS", 2)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "fake")
+
+    winner_summary = {"request": "先到的摘要", "entities": ["ORD-WINNER"]}
+
+    async def _llm_while_rival_commits(system, user_msg, purpose="classify"):
+        # 模拟另一摘要任务在本任务 LLM 期间先完成写入（covered 0 → 4）
+        async with AsyncSessionLocal() as s:
+            ok = await chat_session_repository.merge_metadata(
+                s, tenant, sid,
+                {"memory_summary": winner_summary, "summary_format": "json",
+                 "memory_summary_covered": 4},
+                expect_summary_covered=0,
+            )
+            await s.commit()
+            assert ok
+        return VALID_SUMMARY_JSON  # 本任务（后到者）的产出
+
+    monkeypatch.setattr(
+        "app.chat.memory.local_provider.chat_completion", _llm_while_rival_commits
+    )
+    await local_memory_provider._maybe_summarize(tenant, sid)
+
+    meta = await _get_meta(sid)
+    # 先到者的摘要保留，后到者被 CAS 拒绝（修复前后到者会覆盖）
+    assert meta["memory_summary"] == winner_summary
+    assert meta["memory_summary_covered"] == 4
+
+
+async def test_summary_step_gate(monkeypatch, seed):
+    """滚动步长：增量不足步长不触发 LLM；达到步长才滚动（首次摘要不受限）。"""
+    tenant, _, sid = await seed(8)
+    monkeypatch.setattr(settings, "MEMORY_SUMMARY_THRESHOLD", 2)
+    monkeypatch.setattr(settings, "MEMORY_SHORT_TERM_TURNS", 2)
+    monkeypatch.setattr(settings, "MEMORY_SUMMARY_STEP", 4)
+    mock = _fake_llm(monkeypatch, VALID_SUMMARY_JSON)
+
+    # 首次摘要（covered=0）：不受步长限制，正常建立摘要 covered=6
+    await local_memory_provider._maybe_summarize(tenant, sid)
+    assert mock.await_count == 1
+    assert (await _get_meta(sid))["memory_summary_covered"] == 6
+
+    # 追加 2 条：增量 2 < 步长 4 → 不触发 LLM，游标不动（修复前每轮都调）
+    await _add_messages(tenant, sid, 8, 2)
+    await local_memory_provider._maybe_summarize(tenant, sid)
+    assert mock.await_count == 1
+    assert (await _get_meta(sid))["memory_summary_covered"] == 6
+
+    # 再追加 2 条：增量 4 ≥ 步长 4 → 滚动一次，covered 推进到 10
+    await _add_messages(tenant, sid, 10, 2)
+    await local_memory_provider._maybe_summarize(tenant, sid)
+    assert mock.await_count == 2
+    assert (await _get_meta(sid))["memory_summary_covered"] == 10
