@@ -21,3 +21,6 @@ data/export/
 
 # JetBrains IDE
 .idea/
+
+# Claude Code 本地会话配置
+.claude/
