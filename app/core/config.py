@@ -237,6 +237,13 @@ class Settings(BaseSettings):
     CLARIFY_LLM_ENABLED: bool = True
     # top_k 候选进入澄清 prompt 的最低置信分（宽松下限——低置信正是本场景）
     CLARIFY_MIN_CANDIDATE_SCORE: float = 0.15
+
+    # ----- Stage 22 只读诊断 agent -----
+    # 解释性查询（"为什么还没到"）的多步只读调查：LLM 在只读工具白名单内
+    # 决定下一步查什么，代码控制终止。默认关闭=零回归；开启需真实 LLM 联调
+    DIAGNOSE_AGENT_ENABLED: bool = False
+    # 决策循环步数硬上限（结构性终止条件之一）
+    DIAGNOSE_MAX_STEPS: int = 3
     # 父子分块：命中块按章节聚合上下文的字符上限
     RAG_SECTION_CONTEXT_CHARS: int = 1200
     # 分块参数（字符数口径）

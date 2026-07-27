@@ -62,6 +62,9 @@ SEMANTIC_CACHE = Counter(
 # RAG 检索结局：faq_hit / rag_answer / refused / degraded
 RAG_RETRIEVALS = Counter("rag_retrievals_total", "RAG 检索次数", ["outcome"])
 
+# 只读诊断 agent（Stage 22）：answered=解释生效 / degraded=触发但降级回静态链
+DIAGNOSE_AGENT = Counter("diagnose_agent_total", "只读诊断 agent 结局", ["outcome"])
+
 # 确认门结局：confirmed / denied / modified
 CONFIRM_GATE = Counter("confirm_gate_total", "确认门应答次数", ["outcome"])
 
@@ -155,6 +158,11 @@ def count_rag(outcome: str) -> None:
 def observe_kb_stage(stage: str, seconds: float) -> None:
     """记录知识检索某阶段的耗时（retriever/answerer 打点）。"""
     KB_STAGE_DURATION.labels(stage=stage).observe(seconds)
+
+
+def count_diagnose(outcome: str) -> None:
+    """记录一次只读诊断 agent 结局（Stage 22，outcome=answered/degraded）。"""
+    DIAGNOSE_AGENT.labels(outcome=outcome).inc()
 
 
 def count_confirm_gate(outcome: str) -> None:

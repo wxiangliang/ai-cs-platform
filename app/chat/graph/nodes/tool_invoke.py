@@ -10,12 +10,14 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from app.chat.agents.diagnose import needs_diagnosis, run_diagnose
 from app.chat.graph.state import GraphState, get_db_session_from_config
 from app.chat.intent.types import IntentLabel
 from app.chat.skills.registry import skill_registry
 from app.chat.skills.responder import render_reply
 from app.chat.tools.base import mask_sensitive
 from app.chat.tools.factory import get_tool_provider
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.repositories.chat_tool_call_repository import chat_tool_call_repository
 
@@ -89,8 +91,41 @@ async def tool_invoke(state: GraphState, config: RunnableConfig) -> dict[str, An
             merged.update(result.data)
 
     if merged:
+        reply = _format_reply(intent, merged)
+        # —— Stage 22 只读诊断 agent（默认关）：解释性问句（"为什么还没到"）
+        # 才触发多步只读调查，解释段追加在事实底稿之后（底稿不经生成改写，
+        # 红线不动）；任一环节失败走原路径，行为与静态链一致 ——
+        normalized = state.get("normalized_text", "")
+        if settings.DIAGNOSE_AGENT_ENABLED and needs_diagnosis(normalized):
+            from app.core.metrics import count_diagnose
+
+            outcome = None
+            try:
+                outcome = await run_diagnose(
+                    session,
+                    tenant_id,
+                    session_id,
+                    user_text=normalized,
+                    observations=merged,
+                    slots=dict(slots),
+                    task_id=active_task_id,
+                )
+            except Exception:  # noqa: BLE001 - 诊断失败绝不打断静态链回复
+                logger.exception("diagnose agent failed, fallback to static reply")
+            if outcome is not None:
+                count_diagnose("answered")
+                return {
+                    "reply": f"{reply}\n{outcome.explanation}",
+                    "answer_source": "tool",
+                    "retrieval": {
+                        "tool_calls": calls + outcome.steps,
+                        "diagnose": True,
+                    },
+                    "graph_trace": ["tool_invoke:diagnose"],
+                }
+            count_diagnose("degraded")
         return {
-            "reply": _format_reply(intent, merged),
+            "reply": reply,
             "answer_source": "tool",
             "retrieval": {"tool_calls": calls},
             "graph_trace": ["tool_invoke"],
