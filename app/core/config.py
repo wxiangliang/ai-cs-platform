@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     CHAT_MODEL: str = "gpt-4o-mini"
     # LLM 调用超时（秒），所有外部访问必须有超时
     LLM_TIMEOUT: int = 30
+    # 轮级 LLM 时间预算（秒，0=关闭）：一轮对话内所有 LLM 调用共享的时间上限。
+    # 剩余预算耗尽后，后续 LLM 调用直接走降级（与无 Key 同路径：模板/摘录/规则），
+    # 单次调用也以剩余预算为外层超时——防止多次串行调用 × 超时重试把单轮拖到分钟级
+    # （正常轮次 2-3 次调用远用不满，仅剪掉病态尾部）
+    TURN_LLM_BUDGET_SECONDS: float = 40.0
     # LLM 回复润色：把模板/事实底稿改写为自然话术（仅 DONE/FALLBACK 轮次，
     # 补槽/确认门保持确定性模板）。未配置 API Key 时自动失效
     LLM_REPLY_ENABLED: bool = True
@@ -178,8 +183,15 @@ class Settings(BaseSettings):
     MEMORY_SHORT_TERM_TURNS: int = 8
     # 会话消息数超过该阈值后，把更早对话压缩成摘要（防上下文膨胀，需 LLM）
     MEMORY_SUMMARY_THRESHOLD: int = 20
+    # 摘要滚动步长：距上次摘要新增消息数达到该值才再次触发 LLM 续写
+    # （成本修复：原实现超阈值后每轮都调一次 LLM；每轮 2 条消息，6=约每 3 轮滚动一次。
+    # 首次摘要不受步长限制；步长间隔内早于短期窗口的少量消息暂不在上下文中，下次滚动并入）
+    MEMORY_SUMMARY_STEP: int = 6
     # 长期记忆：取用时最多注入 N 条持久事实
     MEMORY_LONG_TERM_MAX: int = 5
+    # 后台记忆任务并发上限（容量修复）：每轮对话都会派生一个记忆写入任务，
+    # 无上限时 N QPS 稳态下有 N 个任务与请求争抢同一 DB 连接池与 LLM 额度
+    MEMORY_TASK_CONCURRENCY: int = 3
 
     # ----- Embedding 配置（Stage 06 RAG）-----
     # openai：走 OpenAI 兼容接口（OPENAI_BASE_URL 可指向本地推理服务）；
@@ -214,6 +226,10 @@ class Settings(BaseSettings):
     # 歧义检测：top1/top2 向量分差小于该值且来自不同文档 → 标记 ambiguous，
     # 摘录式回答附「以对应政策为准」提示（LLM 生成路径由资料并列呈现处理）
     RAG_AMBIGUITY_DELTA: float = 0.05
+    # 含糊查询 LLM 改写（WeKnora 对齐）：指代/过短查询先结合近期对话改写成
+    # 独立明确的检索查询再检索（「刚才那个多少钱」→「AP-300 空气净化器价格」）。
+    # 无 Key 自动失效（零回归）；改写轮次绕过语义缓存（结果依赖对话上下文）
+    RAG_QUERY_REWRITE_ENABLED: bool = True
     # 父子分块：命中块按章节聚合上下文的字符上限
     RAG_SECTION_CONTEXT_CHARS: int = 1200
     # 分块参数（字符数口径）
