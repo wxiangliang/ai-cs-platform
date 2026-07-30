@@ -8,10 +8,15 @@
     uv run python scripts/train_meta_classifier.py --data data/export/meta_train_t1_xxx.csv
 
 标签口径：target_decision = 链路实际决策（map_actual_decision 近似口径）＝**弱标签**。
-人工审核纪律（改标后再训才有超越 Stage 26 阈值的可能）：
-  1. 优先审 shadow_agree=False 行（模型与链路分歧样本，信息量最大）；
-  2. 其次审 actual 为 CONTINUE_CURRENT 的守护拦截轮（守护可能拦错真切换）；
+冷启动风险：弱标签就是 Stage 26 阈值的决策，不改标直接训=克隆老师连错误一起学；
+人工审核纪律（改标后再训才有超越现有阈值的可能）：
+  1. **最优先审 hindsight_signal 非空行**——系统事后自己暴露决策错误的证据：
+     task_deny（该轮之后同会话出现任务中途否定→之前开的任务大概率是错的）/
+     handoff（之后转了人工）/ low_csat（会话 CSAT<=2）/ feedback_down（会话有差评）；
+  2. 其次审 shadow_agree=False 行（模型与链路分歧样本，信息量最大）；
   3. message 列已脱敏，仅供审核参考，训练侧在泄漏黑名单内。
+注意：hindsight/分歧只影响审核优先级；sample_weight 的加权（分歧行 1.5）
+建立在「该行已经人工确认过标签」的前提上——未审核的行别直接进训练。
 
 split 按 session 分组确定性分桶（md5，同会话同桶——组安全防近重复泄漏，
 与合成集 case_family 纪律一致）；导出文件在 data/export/（gitignore）。
@@ -56,8 +61,33 @@ def _split_for_session(session_id: str) -> str:
     return "validation" if bucket < 90 else "test"
 
 
+def hindsight_signal(
+    task_deny: bool, handoff: bool, low_csat: bool, feedback_down: bool
+) -> str:
+    """把四个后见信号拼成审核参考列（逗号分隔，空串=无信号）。
+
+    信号语义（真值均代表「该轮决策事后被证伪的概率高」，审核最优先）：
+    task_deny/handoff 为轮后事件（同会话该轮之后发生），
+    low_csat/feedback_down 为会话级结局。
+    """
+    parts = []
+    if task_deny:
+        parts.append("task_deny")
+    if handoff:
+        parts.append("handoff")
+    if low_csat:
+        parts.append("low_csat")
+    if feedback_down:
+        parts.append("feedback_down")
+    return ",".join(parts)
+
+
 def build_export_row(
-    row_id: int, session_id: str, message: str, shadow: dict[str, Any]
+    row_id: int,
+    session_id: str,
+    message: str,
+    shadow: dict[str, Any],
+    hindsight: str = "",
 ) -> dict[str, Any] | None:
     """把一条决策日志的 meta_shadow 记录转成训练契约行；缺特征返回 None。
 
@@ -79,6 +109,7 @@ def build_export_row(
         # 审核参考列（非训练输入）
         "shadow_decision": shadow.get("decision") or "",
         "shadow_agree": "" if shadow.get("agree") is None else str(shadow["agree"]),
+        "hindsight_signal": hindsight,
     }
     for col in _FEATURE_COLUMNS:
         value = features[col]
@@ -91,11 +122,35 @@ async def export(tenant: str, days: int, out_dir: Path) -> None:
     from app.db.session import AsyncSessionLocal, dispose_engine
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
+    # 后见信号（审核优先级依据）：task_deny/handoff 只看该轮**之后**的同会话事件
+    # （之前的事件证伪不了本轮决策）；CSAT/差评是会话级结局（口径同 export_review_set）
     sql = text(
         """
         SELECT d.session_id,
                COALESCE(d.normalized_text, '')       AS message,
-               d.graph_trace_json -> 'meta_shadow'   AS shadow
+               d.graph_trace_json -> 'meta_shadow'   AS shadow,
+               EXISTS (
+                   SELECT 1 FROM chat_decision_log x
+                   WHERE x.tenant_id = d.tenant_id AND x.session_id = d.session_id
+                     AND x.created_at > d.created_at
+                     AND x.decision_source = 'RULE_TASK_DENY'
+               ) AS sig_task_deny,
+               EXISTS (
+                   SELECT 1 FROM chat_decision_log x
+                   WHERE x.tenant_id = d.tenant_id AND x.session_id = d.session_id
+                     AND x.created_at > d.created_at
+                     AND x.status = 'HANDOFF'
+               ) AS sig_handoff,
+               EXISTS (
+                   SELECT 1 FROM chat_csat cs
+                   WHERE cs.tenant_id = d.tenant_id AND cs.session_id = d.session_id
+                     AND cs.score <= 2
+               ) AS sig_low_csat,
+               EXISTS (
+                   SELECT 1 FROM chat_feedback f
+                   WHERE f.tenant_id = d.tenant_id AND f.session_id = d.session_id
+                     AND f.rating = 'down'
+               ) AS sig_feedback_down
         FROM chat_decision_log d
         WHERE d.tenant_id = :tenant
           AND d.created_at >= :since
@@ -116,15 +171,22 @@ async def export(tenant: str, days: int, out_dir: Path) -> None:
     fieldnames = [
         "row_id", "split", "case_family_id", "scenario_family", "message",
         *_FEATURE_COLUMNS, "control_result", "target_decision", "sample_weight",
-        "feature_source", "shadow_decision", "shadow_agree",
+        "feature_source", "shadow_decision", "shadow_agree", "hindsight_signal",
     ]
-    count = disagree = 0
+    count = disagree = flagged = 0
     with out.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for record in rows:
             built = build_export_row(
-                count + 1, record["session_id"], record["message"], record["shadow"] or {}
+                count + 1,
+                record["session_id"],
+                record["message"],
+                record["shadow"] or {},
+                hindsight=hindsight_signal(
+                    record["sig_task_deny"], record["sig_handoff"],
+                    record["sig_low_csat"], record["sig_feedback_down"],
+                ),
             )
             if built is None:
                 continue
@@ -132,7 +194,12 @@ async def export(tenant: str, days: int, out_dir: Path) -> None:
             count += 1
             if built["shadow_agree"] == "False":
                 disagree += 1
-    print(f"导出 {count} 行 → {out}（其中影子分歧 {disagree} 行，建议优先人工审核）")
+            if built["hindsight_signal"]:
+                flagged += 1
+    print(
+        f"导出 {count} 行 → {out}"
+        f"（后见信号 {flagged} 行【最优先审】，影子分歧 {disagree} 行【其次】）"
+    )
     print("人工改标 target_decision 后重训：")
     print(f"  uv run python scripts/train_meta_classifier.py --data {out}")
 

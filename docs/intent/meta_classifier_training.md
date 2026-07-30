@@ -114,10 +114,23 @@ uv run python scripts/train_meta_classifier.py --data data/export/meta_train_t1_
 ```
 
 导出口径：split 按 session md5 分桶（80/10/10，同会话同桶=组安全）；
-`target_decision` 默认是链路实际决策（弱标签），影子分歧行
-（shadow_agree=False）自动加权 1.5 并应**优先人工审核**——模型与
-Stage 26 阈值不一致的样本信息量最大；message 列已脱敏、仅供审核。
-契约防漂移：tests/stage27 断言导出特征列 == 训练白名单。
+`target_decision` 默认是链路实际决策（**弱标签**——冷启动时就是
+Stage 26 阈值的决策，不改标直接训=克隆老师连错误一起学）；
+message 列已脱敏、仅供审核。契约防漂移：tests/stage27 断言导出
+特征列 == 训练白名单。
+
+**审核优先级**（`hindsight_signal` 列——系统事后自证决策错误的证据）：
+
+| 优先级 | 筛选条件 | 含义 |
+|---|---|---|
+| 1 | `hindsight_signal` 非空 | 该轮之后同会话出现任务中途否定（task_deny→之前开的任务大概率错）/转人工（handoff）；或会话结局差（low_csat≤2 / feedback_down） |
+| 2 | `shadow_agree=False` | 影子模型与链路阈值分歧，信息量最大（自动加权 1.5） |
+| 3 | 其余 | 抽检 |
+
+注意：特征快照（decision_log 记录）是不可改的审计事实——哪怕状态
+本身是上游误判「错出来的」，它也是模型推理时会真实面对的输入分布；
+**人工修正的对象只有 target_decision 标签**（在导出 CSV 里改）。
+未经审核的行不要直接进训练。
 
 维护约定：特征白名单/黑名单以 `scripts/train_meta_classifier.py` 顶部
 常量为准（单一事实来源），改动需同步 tests/stage27 契约测试与本文档第 2 节。

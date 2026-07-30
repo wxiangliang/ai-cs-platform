@@ -204,6 +204,25 @@ def test_export_split_group_safe():
         assert ex._split_for_session(sid) in {"train", "validation", "test"}
 
 
+def test_hindsight_signal_composition():
+    """后见信号拼接：审核优先级的筛选依据（系统事后自证决策错误）。"""
+    ex = _load_export_script()
+    assert ex.hindsight_signal(False, False, False, False) == ""
+    assert ex.hindsight_signal(True, False, False, False) == "task_deny"
+    assert ex.hindsight_signal(True, True, True, True) == "task_deny,handoff,low_csat,feedback_down"
+
+
+def test_export_row_carries_hindsight():
+    ex = _load_export_script()
+    features = meta_shadow.build_features(_state(), _state()["intent_result"])
+    shadow = {"features": features, "actual": "SWITCH_NEW"}
+    row = ex.build_export_row(1, "s-001", "m", shadow, hindsight="task_deny,low_csat")
+    assert row is not None
+    assert row["hindsight_signal"] == "task_deny,low_csat"
+    # 后见信号不改 sample_weight（未审核标签不加权，纪律见脚本 docstring）
+    assert row["sample_weight"] == 1.0
+
+
 def test_export_feature_columns_match_training_whitelist():
     """导出脚本特征列 == 训练脚本白名单（防两处清单漂移）。"""
     import importlib.util
