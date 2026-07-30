@@ -1,7 +1,8 @@
 # Meta-classifier 训练操作文档
 
 > 设计与选型依据见 `docs/requirements/stage-27-meta-classifier/01_meta_classifier.md`；
-> 本文档回答三件事：**为什么训练、作用是什么、怎么训练**。
+> 本文档回答四件事：**为什么训练、作用是什么、怎么训练、怎么审核改标**。
+> 只想快速上手：直接看第 7 节操作手册。
 > 意图码单一事实来源仍是 `docs/chat/intent_taxonomy.md`。
 
 ---
@@ -163,3 +164,86 @@ GROUP BY 1, 2 ORDER BY n DESC;
 注意：当前挂载的是**合成数据模型**，分歧率数字只反映「合成决策边界 vs
 Stage 26 手调阈值」的差异，用于验证管线与积累对照样本；模型接管决策
 必须等真实特征表重训 + 分歧分析达标（stage-27 文档 4.5 阶段 B）。
+
+## 7. 快速上手操作手册（上线后按周期执行）
+
+完整闭环一图流：
+
+```text
+① 导出          ② 审核改标         ③ 重训            ④ 生效观察
+export_meta_ →  改 CSV 的      →  train_meta_    →  重启服务（影子懒加载）
+training_set    target_decision    classifier         → 看分歧率指标/SQL
+（建议 2-4 周一次；早期数据少可放宽到量够 2000+ 行再训）
+```
+
+### 7.1 第一步：导出
+
+```bash
+uv run python scripts/export_meta_training_set.py --tenant t1 --days 30
+# 输出示例：导出 3210 行 → data/export/meta_train_t1_20261015.csv
+#          （后见信号 87 行【最优先审】，影子分歧 214 行【其次】）
+```
+
+### 7.2 第二步：审核改标（核心步骤，不可省）
+
+用 Excel/WPS/Numbers 打开导出的 CSV（UTF-8 编码；WPS 若乱码选
+「数据→导入文本→UTF-8」）。**只允许改 `target_decision` 一列**，
+其他列一律不动（特征列是运行时事实，`sample_weight` 保持默认）。
+
+审核顺序：先筛 `hindsight_signal` 非空的行，再筛 `shadow_agree=False`
+的行，其余抽检。每行审核只回答一个问题——
+
+> 看 `message`（用户当时说了什么）+ `current_state`/`active_intent`
+> （系统当时在办什么）：这一轮**正确的决策**应该是下面 6 个里的哪个？
+
+| 决策码 | 什么意思 | 典型例子（假设正在办退款、等订单号） |
+|---|---|---|
+| CONTINUE_CURRENT | 用户在回应当前任务，别打断 | 「稍等我找一下单号」「刚才那个订单」 |
+| SWITCH_NEW | 用户真的换了件事办，挂起当前切过去 | 「先别退了，帮我改下收货地址」 |
+| ACCEPT_NEW_INTENT | 没有进行中任务（IDLE），接受新诉求开任务 | （空闲时）「我要退款」 |
+| SEND_TO_LLM | 信号矛盾/太模糊，该送 LLM 二判 | 「那个东西怎么弄」（分不清指什么） |
+| ASK_CLARIFICATION | 在业务范围内但指向不明，该反问 | 「退款和换货有什么区别来着」 |
+| UNKNOWN | 压根不在业务范围（闲聊外/无关问题） | 「你们招不招人」 |
+
+三个典型改标场景：
+
+```text
+例 1（hindsight=task_deny）：补槽中用户问「什么时候能到」，链路判了
+  SWITCH_NEW 切去物流查询，两轮后用户说「不是要查物流」。
+  → 该行 target_decision 从 SWITCH_NEW 改为 SEND_TO_LLM 或
+    ASK_CLARIFICATION（当时就该多问一句，而不是直接切）。
+
+例 2（shadow_agree=False, actual=CONTINUE_CURRENT）：切换守护把
+  「帮我开张发票」拦在了退款任务里追问订单号——message 明显是新诉求。
+  → 改为 SWITCH_NEW（守护拦错了，这正是要教给模型的样本）。
+
+例 3：看完 message 和上下文，认为链路当时判得没错。
+  → 不改。维持原判也是有效标注，别为改而改。
+```
+
+改完**另存为 CSV（保持 UTF-8）**，注意别让 Excel 把布尔列的
+True/False 改成 TRUE/FALSE 或 1/0（只改 target_decision 一列就不会碰到）。
+
+### 7.3 第三步：重训与验收
+
+```bash
+uv run python scripts/train_meta_classifier.py --data data/export/meta_train_t1_20261015.csv
+```
+
+看输出对比表（指标含义见第 4 节），验收三条：
+1. `cost_weighted_error` 和 `false_switch_rate` 是核心，别只看 accuracy；
+2. LightGBM/XGBoost 应赢过 LR——赢不了说明数据还不够，继续攒；
+3. 浅决策树前几个分裂是否符合业务直觉（`tree_rules.txt`）。
+
+### 7.4 第四步：生效与观察
+
+产物写在 `models/meta_classifier_v1/`，影子模式**进程启动时懒加载**
+——重启服务后新模型自动生效（仍只观察不决策）。观察一到两周：
+
+```bash
+# 分歧率走势：Prometheus 查 meta_shadow_total{agree="false"} 占比
+# 明细：第 6 节的分歧率速查 SQL
+```
+
+分歧率持续走低且分歧样本人工复核多数「模型对、阈值错」时，
+才进入接管评估（stage-27 文档 4.5 阶段 B，需另行开发+开关控制）。
