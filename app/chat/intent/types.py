@@ -48,12 +48,14 @@ class DecisionSource:
 
     RULE_KEYWORD = "RULE_KEYWORD"  # 关键词命中
     RULE_SLOT_ONLY = "RULE_SLOT_ONLY"  # 纯槽位输入（如只发订单号）
+    RULE_PENDING_SLOT = "RULE_PENDING_SLOT"  # pending-slot 定向提取命中（Stage 26 补槽守护）
     RULE_CONFIRM_GATE = "RULE_CONFIRM_GATE"  # 确认门应答（CONFIRMING 状态下的确认/否认）
     RULE_TASK_DENY = "RULE_TASK_DENY"  # 任务中途否定（COLLECTING 状态，Stage 23 方向纠偏）
     RULE_FALLBACK = "RULE_FALLBACK"  # 兜底未知
     # —— SetFit 语义层（Stage 04-02）——
     SETFIT = "SETFIT"  # SetFit 模型高置信命中
     SETFIT_LOW_CONF = "SETFIT_LOW_CONF"  # 模型低置信，兜底 UNKNOWN
+    SETFIT_LOW_MARGIN = "SETFIT_LOW_MARGIN"  # 高分但 top1-top2 分差小、二判不可用时采纳（Stage 26，软确认接住）
     SETFIT_FALLBACK_RULE = "SETFIT_FALLBACK_RULE"  # 模型不可用，降级规则全表
     # —— LLM 层（Stage 04-01 / 05）——
     LLM = "LLM"  # SetFit 低置信难例的 LLM 二判命中
@@ -68,18 +70,28 @@ class IntentResult:
     confidence：置信度（0~1）
     decision_source：决策来源
     top_k：候选意图列表（第一版规则识别暂为空，预留入口）
+    margin：SetFit top1-top2 分差（Stage 26；仅语义层来源有值，供路由与离线标定）
+    pending_fill：pending-slot 定向提取证据 {slot, value, evidence}（Stage 26 补槽守护）
     """
 
     pred_label: str
     confidence: float
     decision_source: str
     top_k: list[dict[str, Any]] = field(default_factory=list)
+    margin: float | None = None
+    pending_fill: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转为可落库的 dict（用于 decision_log.intent_result_json）。"""
-        return {
+        result = {
             "pred_label": self.pred_label,
             "confidence": self.confidence,
             "decision_source": self.decision_source,
             "top_k": self.top_k,
         }
+        # Stage 26 证据字段：仅有值时落库，保持既有日志结构不膨胀
+        if self.margin is not None:
+            result["margin"] = self.margin
+        if self.pending_fill is not None:
+            result["pending_fill"] = self.pending_fill
+        return result

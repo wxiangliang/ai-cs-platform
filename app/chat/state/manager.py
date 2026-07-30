@@ -18,14 +18,25 @@
 禁止原地修改传入对象（JSONB 变更检测约束，见 v2 修订）。
 """
 
+import re
 import time
 from typing import Any
 
 from app.chat.intent.types import IntentLabel, IntentResult
 from app.chat.skills.registry import skill_registry
 from app.chat.skills.types import SkillKind
+from app.chat.slots.pending_fill import STRICT_VALIDATED_SLOTS
 from app.chat.state.types import DialogStateValue, ResolveResult, TurnStatus
 from app.core.config import settings
+
+# 显式切换信号（Stage 26 切换守护）：用户明确表达「这是另一件事」时，
+# 新意图切换走普通阈值，不受任务进行态更高门槛约束。
+# 信号不单独决定切换——「另外一个订单号是12345678」含「另外」但能填 pending
+# 槽位，会在分类前被补槽守护接走，到达守护的轮次天然不是槽位应答。
+# 由 dialog_state_resolve 节点对 normalized_text 判定后以 bool 传入（本类不碰文本）
+SWITCH_SIGNAL_RE = re.compile(
+    r"另外|顺便|对了|还有|再帮我|帮我再|先帮我|换个问题|先不说这个|先问|再问|先查|再查"
+)
 
 
 class DialogStateManager:
@@ -39,6 +50,7 @@ class DialogStateManager:
         slots: dict[str, Any],
         task_stack: list[dict[str, Any]] | None = None,
         pending_intents: list[dict[str, Any]] | None = None,
+        explicit_switch: bool = False,
     ) -> ResolveResult:
         """计算本轮状态流转结果。"""
         intent = intent_result.pred_label
@@ -136,10 +148,33 @@ class DialogStateManager:
                 return self._advance_task(active_task, slots, stack)
             return self._fallback(current_state, stack)
 
-        # 未知意图：若正在补槽，则并入本轮槽位并重新评估；否则兜底
+        # 未知意图（Stage 26 收紧）：有任务时只并入「续接证据」——本轮恰好抽到了
+        # 任务缺失槽位的值；其余槽位一律不并入（防「我有12345678个问题」的数字串
+        # 污染 order_id，CONFIRMING 下防已确认信息被误抽值覆盖）。
+        # 无证据 → 不填槽不切换，保留任务并标记 unknown_with_task，
+        # 回复改二选一澄清（「继续补充还是想办别的」）而非原话重问吞掉用户诉求
         if intent == IntentLabel.META_UNKNOWN:
             if active_task:
-                return self._advance_task(active_task, slots, stack)
+                required: list[str] = active_task.get("required_slots", [])
+                collected_now: dict[str, Any] = active_task.get("collected_slots", {})
+                # 严格校验型槽位（order_id/phone）不算续接证据：合法应答必然已在
+                # 分类层被补槽守护/纯槽位接走，UNKNOWN 轮的同型数字串是通用正则
+                # 误抽（「我有12345678个问题」），不可信
+                evidence = {
+                    s: slots[s]
+                    for s in required
+                    if s not in STRICT_VALIDATED_SLOTS
+                    and not collected_now.get(s)
+                    and slots.get(s)
+                }
+                result = self._advance_task(active_task, evidence, stack)
+                if (
+                    not evidence
+                    and result.status == TurnStatus.NEEDS_SLOT
+                    and current_state == DialogStateValue.COLLECTING
+                ):
+                    result.unknown_with_task = True
+                return result
             return self._fallback(current_state, stack)
 
         skill = skill_registry.get(intent)
@@ -161,6 +196,17 @@ class DialogStateManager:
             DialogStateValue.CONFIRMING,
         ):
             if active_task.get("intent") != intent:
+                # —— Stage 26 切换守护：任务进行中，新意图的成立不仅要「像新意图」，
+                # 还要证明「不是当前问题的回答」。显式切换信号（「另外/顺便」）走
+                # 普通阈值；否则要求状态分级高置信 + margin 达标，证据不足时
+                # 保留当前任务、回复二选一澄清（COLLECTING 下计一次追问防无限僵持，
+                # CONFIRMING 下重发确认、由确认/否认通道逃生）——
+                if not explicit_switch and not self._switch_evidence_sufficient(
+                    intent_result, current_state
+                ):
+                    result = self._advance_task(active_task, {}, stack)
+                    result.switch_candidate = intent
+                    return result
                 stack.append(dict(active_task))
                 # 栈深上限：溢出丢最旧（FIFO 淘汰）
                 while len(stack) > settings.TASK_STACK_MAX:
@@ -188,6 +234,30 @@ class DialogStateManager:
     # ------------------------------------------------------------------
     # 内部辅助
     # ------------------------------------------------------------------
+    @staticmethod
+    def _switch_evidence_sufficient(
+        intent_result: IntentResult, current_state: str
+    ) -> bool:
+        """任务进行态下新意图切换的证据判定（Stage 26 切换守护）。
+
+        规则来源（RULE_KEYWORD 等，置信 0.9）天然过线——确定性命中不拦；
+        margin 仅语义层来源有值（None 视为无竞争者、放行）。
+        阈值为待真实流量标定的保守默认（stage-26 文档 4.5）。
+        """
+        threshold = (
+            settings.INTENT_SWITCH_THRESHOLD_CONFIRMING
+            if current_state == DialogStateValue.CONFIRMING
+            else settings.INTENT_SWITCH_THRESHOLD_COLLECTING
+        )
+        if intent_result.confidence < threshold:
+            return False
+        if (
+            intent_result.margin is not None
+            and intent_result.margin < settings.INTENT_MIN_MARGIN
+        ):
+            return False
+        return True
+
     def _advance_task(
         self,
         active_task: dict[str, Any],

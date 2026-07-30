@@ -49,6 +49,8 @@ class HybridIntentClassifier:
         *,
         current_state: str = DialogStateValue.IDLE,
         has_active_task: bool = False,
+        pending_slot: str | None = None,
+        collected_slots: dict | None = None,
     ) -> IntentResult:
         """对归一化文本做混合意图识别。"""
         normalized = (text or "").strip()
@@ -59,9 +61,13 @@ class HybridIntentClassifier:
                 decision_source=DecisionSource.RULE_FALLBACK,
             )
 
-        # —— 第 1 层：规则控制层（确定性短路）——
+        # —— 第 1 层：规则控制层（确定性短路，含 Stage 26 pending-slot 定向提取）——
         control = rule_intent_classifier.classify_control(
-            normalized, current_state=current_state, has_active_task=has_active_task
+            normalized,
+            current_state=current_state,
+            has_active_task=has_active_task,
+            pending_slot=pending_slot,
+            collected_slots=collected_slots,
         )
         if control is not None:
             return control
@@ -93,10 +99,16 @@ class HybridIntentClassifier:
             if label in _WRITE_INTENTS
             else settings.INTENT_CONFIDENCE_THRESHOLD
         )
+        # margin = top1 - top2 分差（Stage 26）：0.78/0.76 与 0.78/0.12 决策可信度
+        # 完全不同；单候选视为 margin=1.0（无竞争者）
+        margin = (
+            round(confidence - float(top_k[1]["score"]), 4) if len(top_k) > 1 else 1.0
+        )
         if confidence < threshold:
             # —— 第 3 层：LLM 难例二判（成本只花在低置信样本上）——
             second = await self._llm_second_opinion(normalized, top_k)
             if second is not None:
+                second.margin = margin
                 return second
             # 兜底 UNKNOWN：走澄清/知识库路径；top_k 保留供排查与数据回流
             return IntentResult(
@@ -104,6 +116,23 @@ class HybridIntentClassifier:
                 confidence=confidence,
                 decision_source=DecisionSource.SETFIT_LOW_CONF,
                 top_k=top_k,
+                margin=margin,
+            )
+
+        # —— Stage 26 margin 路由：高分但分差小 → 视为难例交 LLM 二判；
+        # 二判不可用/失败时仍采纳 top1（绝不自动改选 top2——评审纪律），
+        # 打 SETFIT_LOW_MARGIN 来源交下游软确认接住（response_generate）——
+        if margin < settings.INTENT_MIN_MARGIN:
+            second = await self._llm_second_opinion(normalized, top_k)
+            if second is not None:
+                second.margin = margin
+                return second
+            return IntentResult(
+                pred_label=label,
+                confidence=confidence,
+                decision_source=DecisionSource.SETFIT_LOW_MARGIN,
+                top_k=top_k,
+                margin=margin,
             )
 
         return IntentResult(
@@ -111,6 +140,7 @@ class HybridIntentClassifier:
             confidence=confidence,
             decision_source=DecisionSource.SETFIT,
             top_k=top_k,
+            margin=margin,
         )
 
     @staticmethod

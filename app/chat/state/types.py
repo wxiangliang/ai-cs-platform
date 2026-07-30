@@ -57,3 +57,9 @@ class ResolveResult:
     gave_up: bool = False
     # 任务被用户中途否定（Stage 23 方向纠偏：回复重定向话术，只终止当前任务）
     denied_task: dict[str, Any] | None = None
+    # 切换守护拦截（Stage 26）：任务进行中新意图证据不足，保留当前任务，
+    # 值为被拦截的候选新意图码（回复渲染二选一澄清话术）
+    switch_candidate: str | None = None
+    # UNKNOWN 续接收紧（Stage 26）：有任务但本轮既非槽位应答也无续接证据，
+    # 不填槽不切换，回复改二选一澄清而非原话重问
+    unknown_with_task: bool = False

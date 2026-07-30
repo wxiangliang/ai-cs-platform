@@ -12,6 +12,7 @@ from app.chat.skills.llm_responder import polish_reply
 from app.core.config import settings
 from app.chat.skills.registry import skill_registry
 from app.chat.skills.responder import render_reply
+from app.chat.skills.types import SkillKind
 from app.chat.state.types import TurnStatus
 from app.core.i18n import t
 
@@ -84,16 +85,60 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
         if question:
             return {"reply": question, "graph_trace": ["response_generate:clarify"]}
     draft = render_reply(status, skill, collected, locale)
-    # 中置信软确认（Stage 23 方向纠偏）：SETFIT/LLM 来源、置信不高的**新开**任务
-    # （无 task_id 且非恢复），追问话术前复述意图——不阻塞流程不加轮次，
-    # 用户扫一眼即可发现方向错了（配合任务中途否定通道退出）
+
+    # —— Stage 26 切换守护拦截：任务进行中新意图证据不足，回复二选一澄清
+    # （当前任务的追问/确认话术 + 候选新意图的明确引导），不进润色保持确定性 ——
+    switch_candidate = state.get("switch_candidate")
+    if switch_candidate:
+        from app.core.metrics import count_direction
+
+        count_direction("switch_guard")
+        new_name = skill_registry.get(switch_candidate).name
+        key = (
+            "intent.switch_clarify_confirming"
+            if status == TurnStatus.NEEDS_CONFIRM
+            else "intent.switch_clarify_collecting"
+        )
+        return {
+            "reply": t(key, locale, name=skill.name, new_name=new_name, question=draft),
+            "graph_trace": ["response_generate:switch_guard"],
+        }
+    # —— Stage 26 UNKNOWN 无证据保持：不原话重问吞掉用户诉求，
+    # 回复「继续补充还是想办别的」二选一澄清 ——
+    if state.get("unknown_with_task") and status == TurnStatus.NEEDS_SLOT:
+        from app.core.metrics import count_direction
+
+        count_direction("unknown_hold")
+        return {
+            "reply": t("intent.unknown_with_task", locale, name=skill.name, question=draft),
+            "graph_trace": ["response_generate:unknown_hold"],
+        }
+
+    # 中置信软确认（Stage 23 方向纠偏，Stage 26 修订）：**新开**任务
+    # （无 task_id 且非恢复）追问话术前复述意图——不阻塞流程不加轮次，
+    # 用户扫一眼即可发现方向错了（配合任务中途否定通道退出）。触发条件：
+    # - LLM 二判来源：难例本身，一律复述（修复固定置信 0.7 导致的死条件）；
+    # - SETFIT_LOW_MARGIN：top1/top2 分差小且二判不可用，天然模糊；
+    # - SETFIT：置信低于软确认线——写意图单列更高线（修复采纳线==软确认线
+    #   导致写意图永不软确认的死区）
+    source = intent_dict.get("decision_source")
+    soft_line = (
+        settings.INTENT_SOFT_CONFIRM_THRESHOLD_WRITE
+        if skill.kind == SkillKind.WRITE
+        else settings.INTENT_SOFT_CONFIRM_THRESHOLD
+    )
     if (
         status == TurnStatus.NEEDS_SLOT
         and active_task
         and not active_task.get("task_id")
         and not state.get("resumed_task")
-        and intent_dict.get("decision_source") in (DecisionSource.SETFIT, DecisionSource.LLM)
-        and float(intent_dict.get("confidence", 1.0)) < settings.INTENT_SOFT_CONFIRM_THRESHOLD
+        and (
+            source in (DecisionSource.LLM, DecisionSource.SETFIT_LOW_MARGIN)
+            or (
+                source == DecisionSource.SETFIT
+                and float(intent_dict.get("confidence", 1.0)) < soft_line
+            )
+        )
     ):
         from app.core.metrics import count_direction
 

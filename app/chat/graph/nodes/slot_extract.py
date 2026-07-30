@@ -8,7 +8,7 @@
 from typing import Any
 
 from app.chat.graph.state import GraphState
-from app.chat.intent.types import IntentLabel
+from app.chat.intent.types import DecisionSource, IntentLabel
 from app.chat.skills.registry import skill_registry
 from app.chat.slots.extractor import slot_extractor
 from app.chat.slots.llm_extractor import extract_missing_slots
@@ -18,6 +18,17 @@ async def slot_extract(state: GraphState) -> dict[str, Any]:
     """从归一化文本抽取槽位。被护栏拦截时跳过。"""
     if state.get("blocked"):
         return {"slots": {}, "graph_trace": ["slot_extract"]}
+
+    # —— Stage 26 补槽守护命中：直接采信定向提取的键值，跳过全量抽取 ——
+    # （防同轮其他数字串被通用正则误抽、污染任务槽位）
+    intent_pre = state.get("intent_result") or {}
+    if intent_pre.get("decision_source") == DecisionSource.RULE_PENDING_SLOT:
+        fill = intent_pre.get("pending_fill") or {}
+        if fill.get("slot"):
+            return {
+                "slots": {fill["slot"]: fill["value"]},
+                "graph_trace": ["slot_extract"],
+            }
 
     # 多意图拆分时只在主意图段内抽槽（slot_text），防止次要段槽位串入主任务
     text = state.get("slot_text") or state.get("normalized_text", "")

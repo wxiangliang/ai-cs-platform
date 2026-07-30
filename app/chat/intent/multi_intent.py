@@ -18,7 +18,7 @@ from typing import Any
 
 from app.chat.intent.base import IntentClassifier
 from app.chat.intent.rule_classifier import rule_intent_classifier
-from app.chat.intent.types import IntentLabel, IntentResult
+from app.chat.intent.types import DecisionSource, IntentLabel, IntentResult
 from app.chat.slots.extractor import slot_extractor
 from app.core.logging import get_logger
 
@@ -66,6 +66,8 @@ async def detect_multi_intent(
     *,
     current_state: str,
     has_active_task: bool,
+    pending_slot: str | None = None,
+    collected_slots: dict[str, Any] | None = None,
 ) -> MultiIntentResult | None:
     """尝试多意图拆分；不满足条件返回 None（走单意图路径）。"""
     # 触发条件：显式并列标记，或逗号/句读切出多个有效子句
@@ -90,15 +92,30 @@ async def detect_multi_intent(
     segments = segments[:_MAX_SEGMENTS]
 
     # 每段独立分类（并行——各段互不依赖，SetFit 线程池推理/LLM 二判可并发，
-    # 3 段耗时从三者之和降为三者最大值），忽略非业务段；相邻同意图段合并（槽位一起抽）
+    # 3 段耗时从三者之和降为三者最大值），忽略非业务段；相邻同意图段合并（槽位一起抽）。
+    # pending_slot 随段透传（Stage 26）：「订单号是123，顺便查下物流」的第一段
+    # 应命中补槽守护续接当前任务，第二段作为新诉求入栈
     results = await asyncio.gather(
         *(
-            classifier.classify(seg, current_state=current_state, has_active_task=has_active_task)
+            classifier.classify(
+                seg,
+                current_state=current_state,
+                has_active_task=has_active_task,
+                pending_slot=pending_slot,
+                collected_slots=collected_slots,
+            )
             for seg in segments
         )
     )
     classified: list[tuple[str, str, IntentResult]] = []  # (intent, seg_text, result)
+    slot_fill: tuple[str, IntentResult] | None = None  # (seg_text, result) 补槽守护命中段
     for seg, result in zip(segments, results):
+        if (
+            slot_fill is None
+            and result.decision_source == DecisionSource.RULE_PENDING_SLOT
+        ):
+            slot_fill = (seg, result)
+            continue
         if result.pred_label in _NON_BUSINESS:
             continue
         if classified and classified[-1][0] == result.pred_label:
@@ -106,6 +123,21 @@ async def detect_multi_intent(
             classified[-1] = (prev_intent, f"{prev_text} {seg}", prev_result)
         else:
             classified.append((result.pred_label, seg, result))
+
+    # —— Stage 26：补槽段 + 业务段并存 → 主意图 = 补槽续接（当前任务优先），
+    # 业务段作为次要意图入栈自动续办 ——
+    if slot_fill is not None and classified:
+        fill_pending: list[dict[str, Any]] = [
+            {"intent": intent, "slots": slot_extractor.extract(seg_text)}
+            for intent, seg_text, _ in classified[:_MAX_PENDING]
+        ]
+        logger.info(
+            "multi-intent with pending fill: continue current, pending=%s",
+            [p["intent"] for p in fill_pending],
+        )
+        return MultiIntentResult(
+            primary=slot_fill[1], primary_text=slot_fill[0], pending=fill_pending
+        )
 
     distinct = {c[0] for c in classified}
     if len(distinct) < 2:

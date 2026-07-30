@@ -65,6 +65,10 @@ class GraphState(TypedDict, total=False):
     task_gave_up: bool
     # 任务被中途否定（Stage 23：回复重定向话术，{intent: 被否定任务意图}）
     denied_task: dict[str, Any] | None
+    # 切换守护拦截的候选新意图码（Stage 26：回复渲染二选一澄清话术）
+    switch_candidate: str | None
+    # UNKNOWN 有任务但无续接证据（Stage 26：不填槽不切换，回复二选一澄清）
+    unknown_with_task: bool
     # L3 弱确认降级重确认（Stage 13：回复前加提示语）
     weak_confirm_recheck: bool
     # 护栏拦截话术（Stage 14：response_generate 优先使用）

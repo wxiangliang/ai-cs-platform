@@ -33,6 +33,10 @@ TABLE: dict[str, str] = {
     "resume.suspended_optional": "\n另外，刚才的「{name}」还没有开始办理。如需继续：{ask}如果不需要，回复「不是要办这个」即可。",
     "task.denied_redirect": "好的，先不办理「{name}」了。请问您想咨询或办理什么？直接告诉我就可以。",
     "intent.soft_confirm": "您是想「{name}」对吗？如果不是，直接说您的需求即可。",
+    # —— Stage 26 意图决策加固 ——
+    "intent.switch_clarify_collecting": "我这边还在处理「{name}」：{question}如果您想先办理「{new_name}」，请再明确说一下，我会先挂起当前业务。",
+    "intent.switch_clarify_confirming": "当前「{name}」正在等待您的确认：{question}如需办理「{new_name}」，请先回复「确认」或「不用」结束当前步骤。",
+    "intent.unknown_with_task": "抱歉，我没太理解这句话。如果是继续办理「{name}」，{question}如果想咨询或办理其他业务，直接说明您的诉求即可。",
     # —— 写操作回执（Stage 05）——
     "action.already_executed": "这笔申请此前已提交成功，无需重复提交。如需查询进度请告诉我工单号。",
     "action.failed": "抱歉，提交时遇到问题，我已记录您的申请，稍后由人工客服跟进处理，请放心。",

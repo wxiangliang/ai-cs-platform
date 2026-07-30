@@ -14,9 +14,11 @@
 """
 
 import re
+from typing import Any
 
 from app.chat.intent.types import DecisionSource, IntentLabel, IntentResult
 from app.chat.slots.patterns import ORDER_ID_ONLY_RE, PHONE_ONLY_RE
+from app.chat.slots.pending_fill import try_fill_pending_slot
 from app.chat.state.types import DialogStateValue
 
 # 「取消订单」类表达：宾语是订单 → 业务意图 ORDER.CANCEL，
@@ -96,12 +98,16 @@ class RuleIntentClassifier:
         *,
         current_state: str = DialogStateValue.IDLE,
         has_active_task: bool = False,
+        pending_slot: str | None = None,
+        collected_slots: dict[str, Any] | None = None,
     ) -> IntentResult:
         """对预处理后的文本做意图识别。
 
         :param text: 归一化后的用户文本
         :param current_state: 当前对话状态机状态（确认门应答判定依赖它）
         :param has_active_task: 是否存在进行中任务（预留给续接判定）
+        :param pending_slot: 当前任务第一个缺失槽位（Stage 26 补槽守护，COLLECTING 时传入）
+        :param collected_slots: 当前任务已收集槽位（pending fill 值级冲突检测）
         :return: IntentResult
         """
         normalized = (text or "").strip()
@@ -113,9 +119,13 @@ class RuleIntentClassifier:
                 decision_source=DecisionSource.RULE_FALLBACK,
             )
 
-        # 控制层：取消订单 / META / 确认门 / 纯槽位（与混合分类器共用）
+        # 控制层：取消订单 / META / 确认门 / 纯槽位 / pending fill（与混合分类器共用）
         control = self.classify_control(
-            normalized, current_state=current_state, has_active_task=has_active_task
+            normalized,
+            current_state=current_state,
+            has_active_task=has_active_task,
+            pending_slot=pending_slot,
+            collected_slots=collected_slots,
         )
         if control is not None:
             return control
@@ -144,12 +154,15 @@ class RuleIntentClassifier:
         *,
         current_state: str = DialogStateValue.IDLE,
         has_active_task: bool = False,
+        pending_slot: str | None = None,
+        collected_slots: dict[str, Any] | None = None,
     ) -> IntentResult | None:
         """控制层判定：只处理必须确定性执行的意图，未命中返回 None。
 
         供 HybridIntentClassifier 复用（taxonomy 第 8 节三层架构的第 1 层）：
         取消订单正则、META 控制关键词（转人工/放弃/身份）、
-        确认门应答（仅 CONFIRMING）、纯槽位输入。
+        确认门应答（仅 CONFIRMING）、纯槽位输入、pending-slot 定向提取
+        （Stage 26 补槽守护，排在全部控制语义之后——顺序红线见 stage-26 文档 4.1）。
         业务意图不在此判定——混合模式下交给语义模型。
         """
         lowered = normalized.lower()
@@ -205,6 +218,23 @@ class RuleIntentClassifier:
                 pred_label=IntentLabel.META_SLOT_ONLY,
                 confidence=_SLOT_ONLY_CONFIDENCE,
                 decision_source=DecisionSource.RULE_SLOT_ONLY,
+            )
+
+        # —— pending-slot 定向提取（Stage 26 补槽守护）：COLLECTING 下且任务在等
+        # 某个槽位时，「订单号是12345678」这类回答式消息直接续接当前任务，
+        # 不进 SetFit 全表分类（防高置信误判成新意图、挂起当前任务）。
+        # 必须排在所有显式控制语义之后：「订单号先不找了，帮我查运费」
+        # 要先被放弃/否定语义接走 ——
+        if (
+            pending_slot
+            and current_state == DialogStateValue.COLLECTING
+            and (fill := try_fill_pending_slot(normalized, pending_slot, collected_slots))
+        ):
+            return IntentResult(
+                pred_label=IntentLabel.META_SLOT_ONLY,
+                confidence=_SLOT_ONLY_CONFIDENCE,
+                decision_source=DecisionSource.RULE_PENDING_SLOT,
+                pending_fill={"slot": fill.slot, "value": fill.value, "evidence": fill.evidence},
             )
 
         return None

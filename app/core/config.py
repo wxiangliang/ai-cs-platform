@@ -243,6 +243,17 @@ class Settings(BaseSettings):
     # 加意图复述（"您是想退货对吗？"）——不阻塞流程，用户扫一眼即可纠偏
     INTENT_SOFT_CONFIRM_THRESHOLD: float = 0.60
 
+    # ----- Stage 26 意图决策加固（阈值均为待真实流量标定的保守默认）-----
+    # SetFit top1-top2 最小分差：低于此值视为模糊难例（交 LLM 二判；
+    # 二判不可用采纳 top1 但打 SETFIT_LOW_MARGIN、由软确认接住）
+    INTENT_MIN_MARGIN: float = 0.10
+    # 任务进行态切换阈值：补槽/确认门中新意图挂起切换所需的最低置信
+    # （显式切换信号「另外/顺便」走普通阈值；证据不足保留任务二选一澄清）
+    INTENT_SWITCH_THRESHOLD_COLLECTING: float = 0.78
+    INTENT_SWITCH_THRESHOLD_CONFIRMING: float = 0.85
+    # 写意图软确认线（单列高于采纳线 0.60，修复采纳线==软确认线的死区）
+    INTENT_SOFT_CONFIRM_THRESHOLD_WRITE: float = 0.75
+
     # ----- Stage 22 只读诊断 agent -----
     # 解释性查询（"为什么还没到"）的多步只读调查：LLM 在只读工具白名单内
     # 决定下一步查什么，代码控制终止。默认关闭=零回归；开启需真实 LLM 联调
