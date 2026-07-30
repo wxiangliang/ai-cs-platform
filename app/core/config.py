@@ -254,6 +254,16 @@ class Settings(BaseSettings):
     # 写意图软确认线（单列高于采纳线 0.60，修复采纳线==软确认线的死区）
     INTENT_SOFT_CONFIRM_THRESHOLD_WRITE: float = 0.75
 
+    # ----- Stage 27 Meta-classifier 影子模式 -----
+    # 影子模式：模型对每轮语义层决策做预测、落决策日志、出分歧率指标，
+    # **不驱动任何决策**（合成数据模型不碰生产决策的红线）。
+    # 模型产物缺失（models/ 不进镜像）时自动静默停用，零回归
+    META_SHADOW_ENABLED: bool = True
+    # 使用的模型：champion=按 metrics.json 冠军；或显式 lr/lgbm/xgb
+    META_SHADOW_MODEL: str = "champion"
+    # 产物目录（锚定仓库根，Stage 13 纪律同 SKILLS_DIR）
+    META_SHADOW_DIR: str = "models/meta_classifier_v1"
+
     # ----- Stage 22 只读诊断 agent -----
     # 解释性查询（"为什么还没到"）的多步只读调查：LLM 在只读工具白名单内
     # 决定下一步查什么，代码控制终止。默认关闭=零回归；开启需真实 LLM 联调

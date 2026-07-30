@@ -36,11 +36,27 @@ async def dialog_state_resolve(state: GraphState) -> dict[str, Any]:
         explicit_switch=bool(SWITCH_SIGNAL_RE.search(state.get("normalized_text", ""))),
     )
 
+    # —— Stage 27 Meta-classifier 影子预测：只观察不决策 ——
+    # 输入是 resolve 前的任务上下文（state）+ 流转结局（对照口径），
+    # 结果落 state 供决策日志；部署域外/未启用/产物缺失返回 None
+    from app.chat.intent.meta_shadow import shadow_predict
+
+    meta_shadow = shadow_predict(
+        dict(state),
+        {
+            "switch_candidate": result.switch_candidate,
+            "unknown_with_task": result.unknown_with_task,
+            "active_task": result.active_task,
+        },
+    )
+
     return {
         "new_state": result.new_state,
         "status": result.status,
         "active_task": result.active_task,
         "missing_slot": result.missing_slot,
+        # —— Stage 27：影子预测（graph_trace_json.meta_shadow 落库）——
+        "meta_shadow": meta_shadow,
         # —— Stage 05：任务栈 / 执行交接 / 恢复提示 ——
         "task_stack": result.task_stack,
         "finished_task": result.finished_task,

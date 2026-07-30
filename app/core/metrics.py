@@ -74,6 +74,12 @@ DIRECTION_CORRECTION = Counter(
 # 确认门结局：confirmed / denied / modified
 CONFIRM_GATE = Counter("confirm_gate_total", "确认门应答次数", ["outcome"])
 
+# Meta-classifier 影子模式（Stage 27）：decision=影子预测的 6 类决策，
+# agree=与实际链路决策（Stage 26 阈值）是否一致——分歧率是接管评估的核心口径
+META_SHADOW = Counter(
+    "meta_shadow_total", "Meta-classifier 影子预测次数", ["decision", "agree"]
+)
+
 # 写操作执行（tool_id 白名单控制基数，ok=true/false）
 ACTION_EXECUTIONS = Counter(
     "action_executions_total", "写操作执行次数", ["tool_id", "ok"]
@@ -179,6 +185,11 @@ def count_direction(kind: str) -> None:
 def count_confirm_gate(outcome: str) -> None:
     """记录一次确认门结局（save_turn 收口调用）。"""
     CONFIRM_GATE.labels(outcome=outcome).inc()
+
+
+def count_meta_shadow(decision: str, agree: bool) -> None:
+    """记录一次 Meta-classifier 影子预测（Stage 27，decision=6 类决策码）。"""
+    META_SHADOW.labels(decision=decision, agree=str(agree).lower()).inc()
 
 
 def count_action(tool_id: str | None, ok: bool) -> None:

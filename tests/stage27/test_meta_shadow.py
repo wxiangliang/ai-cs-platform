@@ -1,0 +1,225 @@
+"""Stage 27 影子模式测试：特征构造 / 部署域过滤 / 降级 / 对照口径 / 实预测。
+
+实预测用例依赖本地训练产物（models/meta_classifier_v1/），缺失时自动跳过
+（CI 无产物环境=验证降级路径本身）。
+"""
+
+from pathlib import Path
+
+import pytest
+
+from app.chat.intent import meta_shadow
+from app.chat.intent.types import DecisionSource, IntentLabel
+from app.core.config import settings
+
+_ARTIFACTS = (
+    Path(meta_shadow.__file__).resolve().parents[3]
+    / settings.META_SHADOW_DIR
+    / "feature_spec.json"
+)
+
+
+def _state(source=DecisionSource.SETFIT, **over):
+    base = {
+        "normalized_text": "帮我查下物流",
+        "current_state": "COLLECTING",
+        "active_task": {
+            "intent": "AFTERSALE.REFUND",
+            "required_slots": ["order_id"],
+            "collected_slots": {},
+        },
+        "task_stack": [],
+        "slots": {},
+        "intent_result": {
+            "pred_label": "LOGISTICS.TRACK",
+            "confidence": 0.82,
+            "decision_source": source,
+            "top_k": [
+                {"label": "LOGISTICS.TRACK", "score": 0.82},
+                {"label": "ORDER.QUERY_STATUS", "score": 0.11},
+            ],
+            "margin": 0.71,
+        },
+    }
+    base.update(over)
+    return base
+
+
+# ---------------- 特征构造 ----------------
+
+
+def test_build_features_matches_contract():
+    features = meta_shadow.build_features(_state(), _state()["intent_result"])
+    # 与训练脚本白名单同构（键集合一致由 spec 用例锁定，这里查关键映射）
+    assert features["current_state"] == "COLLECTING"
+    assert features["active_domain"] == "AFTERSALE"
+    assert features["pending_slot"] == "customer_phone_or_order_id"  # 取值域映射
+    assert features["setfit_top1_label"] == "LOGISTICS.TRACK"
+    assert features["setfit_margin"] == 0.71
+    assert features["has_active_task"] == 1
+    assert features["slot_match"] == 0
+
+
+def test_build_features_keys_align_with_training_whitelist():
+    import importlib.util
+
+    root = Path(meta_shadow.__file__).resolve().parents[3]
+    spec = importlib.util.spec_from_file_location(
+        "tmc", root / "scripts" / "train_meta_classifier.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    features = meta_shadow.build_features(_state(), _state()["intent_result"])
+    assert set(features) == set(mod.ALL_FEATURES)
+
+
+def test_pending_fill_maps_slot_match():
+    s = _state()
+    s["intent_result"]["pending_fill"] = {
+        "slot": "order_id", "value": "12345678", "evidence": "explicit_slot_name"
+    }
+    features = meta_shadow.build_features(s, s["intent_result"])
+    assert features["slot_match"] == 1
+    assert features["slot_match_type"] == "EXPLICIT_SLOT_NAME"
+    assert features["slot_value_type"] == "ORDER_ID_OR_PHONE"
+
+
+# ---------------- 部署域与降级 ----------------
+
+
+def test_rule_sources_out_of_scope():
+    """控制层来源不做影子预测（训练域 control_result==NONE 对齐）。"""
+    for src in (
+        DecisionSource.RULE_KEYWORD, DecisionSource.RULE_CONFIRM_GATE,
+        DecisionSource.RULE_SLOT_ONLY, DecisionSource.RULE_PENDING_SLOT,
+        DecisionSource.RULE_TASK_DENY,
+    ):
+        assert meta_shadow.shadow_predict(_state(source=src), {}) is None
+
+
+def test_disabled_returns_none(monkeypatch):
+    monkeypatch.setattr(settings, "META_SHADOW_ENABLED", False)
+    assert meta_shadow.shadow_predict(_state(), {}) is None
+
+
+def test_missing_artifacts_still_collects_features(monkeypatch, tmp_path):
+    """产物缺失：预测层停用但**特征采集照常**——真实训练数据回流不中断
+    （models/ 不进镜像的部署形态下决策日志仍积累特征+弱标签）。"""
+    monkeypatch.setattr(settings, "META_SHADOW_DIR", str(tmp_path / "nope"))
+    meta_shadow.reset_for_test()
+    try:
+        record = meta_shadow.shadow_predict(_state(), {"switch_candidate": "X"})
+        assert record is not None
+        assert "features" in record and record["actual"] == "CONTINUE_CURRENT"
+        assert "decision" not in record  # 无模型不预测
+    finally:
+        meta_shadow.reset_for_test()
+
+
+# ---------------- 对照口径 ----------------
+
+
+def test_map_actual_decision():
+    s = _state()
+    # 守护拦截 → hold
+    assert meta_shadow.map_actual_decision(s, {"switch_candidate": "X"}) == "CONTINUE_CURRENT"
+    # LLM 二判来源 → SEND_TO_LLM
+    s2 = _state(source=DecisionSource.LLM)
+    assert meta_shadow.map_actual_decision(s2, {}) == "SEND_TO_LLM"
+    # UNKNOWN 无任务 → UNKNOWN
+    s3 = _state()
+    s3["active_task"] = None
+    s3["intent_result"]["pred_label"] = IntentLabel.META_UNKNOWN
+    assert meta_shadow.map_actual_decision(s3, {}) == "UNKNOWN"
+    # 任务中切换成功 → SWITCH_NEW
+    assert (
+        meta_shadow.map_actual_decision(
+            s, {"active_task": {"intent": "LOGISTICS.TRACK"}}
+        )
+        == "SWITCH_NEW"
+    )
+    # IDLE 新开 → ACCEPT_NEW_INTENT
+    s4 = _state(current_state="IDLE")
+    s4["active_task"] = None
+    assert meta_shadow.map_actual_decision(s4, {}) == "ACCEPT_NEW_INTENT"
+
+
+# ---------------- 实预测（需本地训练产物） ----------------
+
+
+@pytest.mark.skipif(not _ARTIFACTS.exists(), reason="需先跑 train_meta_classifier.py")
+def test_shadow_predict_live():
+    meta_shadow.reset_for_test()
+    result = meta_shadow.shadow_predict(_state(), {"active_task": {"intent": "LOGISTICS.TRACK"}})
+    assert result is not None
+    assert result["decision"] in {
+        "CONTINUE_CURRENT", "SWITCH_NEW", "ACCEPT_NEW_INTENT",
+        "SEND_TO_LLM", "ASK_CLARIFICATION", "UNKNOWN",
+    }
+    assert result["actual"] == "SWITCH_NEW"
+    assert isinstance(result["agree"], bool)
+    assert result["model"]
+    # 特征向量随预测一并落库（真实训练数据回流通道）
+    assert "features" in result
+
+
+# ---------------- 训练数据回流导出（契约） ----------------
+
+
+def _load_export_script():
+    import importlib.util
+
+    root = Path(meta_shadow.__file__).resolve().parents[3]
+    spec = importlib.util.spec_from_file_location(
+        "export_meta", root / "scripts" / "export_meta_training_set.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_export_row_matches_training_contract():
+    """导出行必须能被训练脚本 load_rows/build_frame 原样消费。"""
+    ex = _load_export_script()
+    features = meta_shadow.build_features(_state(), _state()["intent_result"])
+    shadow = {"features": features, "actual": "SWITCH_NEW", "decision": "CONTINUE_CURRENT", "agree": False}
+    row = ex.build_export_row(1, "s-001", "查下物流", shadow)
+    assert row is not None
+    # 特征列齐全且布尔写 "True"/"False"（训练侧按 =="True" 解析）
+    for col in ex._FEATURE_COLUMNS:
+        assert col in row
+    assert row["has_active_task"] == "True"
+    assert row["slot_match"] == "False"
+    assert row["control_result"] == "NONE"
+    assert row["target_decision"] == "SWITCH_NEW"
+    assert row["sample_weight"] == 1.5  # 分歧样本加权（难例）
+    assert row["case_family_id"] == "session:s-001"
+
+
+def test_export_split_group_safe():
+    """同会话必须同 split（组安全），且分桶确定可复现。"""
+    ex = _load_export_script()
+    for sid in ("s-001", "s-002", "abc"):
+        assert ex._split_for_session(sid) == ex._split_for_session(sid)
+        assert ex._split_for_session(sid) in {"train", "validation", "test"}
+
+
+def test_export_feature_columns_match_training_whitelist():
+    """导出脚本特征列 == 训练脚本白名单（防两处清单漂移）。"""
+    import importlib.util
+
+    ex = _load_export_script()
+    root = Path(meta_shadow.__file__).resolve().parents[3]
+    spec = importlib.util.spec_from_file_location(
+        "tmc2", root / "scripts" / "train_meta_classifier.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert set(ex._FEATURE_COLUMNS) == set(mod.ALL_FEATURES)
+    assert set(ex._BOOL_COLUMNS) == set(mod.BOOLEAN_FEATURES)
+
+
+def test_export_row_skips_incomplete_shadow():
+    ex = _load_export_script()
+    assert ex.build_export_row(1, "s", "m", {"actual": "UNKNOWN"}) is None  # 缺特征
+    assert ex.build_export_row(1, "s", "m", {"features": {}}) is None

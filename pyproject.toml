@@ -41,6 +41,13 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.15.20",
 ]
+# Meta-classifier 训练依赖（Stage 27，仅离线训练用，生产镜像不装）：
+# uv sync --group train；未安装时训练脚本自动跳过 lgbm/xgb 仅跑 sklearn 基线
+train = [
+    "lightgbm>=4.6.0",
+    "pandas>=2.2.0",
+    "xgboost>=3.0.0",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -50,5 +57,5 @@ testpaths = ["tests"]
 ignore_missing_imports = false
 
 [[tool.mypy.overrides]]
-module = ["pymilvus.*", "jieba.*", "setfit.*", "datasets.*", "sklearn.*", "openpyxl.*", "docx.*", "docling.*", "pypdf.*", "yaml.*", "mem0.*", "zhconv.*", "sentence_transformers.*"]
+module = ["pymilvus.*", "jieba.*", "setfit.*", "datasets.*", "sklearn.*", "openpyxl.*", "docx.*", "docling.*", "pypdf.*", "yaml.*", "mem0.*", "zhconv.*", "sentence_transformers.*", "joblib.*", "pandas.*"]
 ignore_missing_imports = true

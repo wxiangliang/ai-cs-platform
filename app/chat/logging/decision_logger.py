@@ -62,9 +62,12 @@ def build_log_data(state: dict[str, Any]) -> DecisionLogData:
         status=state.get("status"),
         decision_source=intent_result.get("decision_source"),
         # 护栏结论随图轨迹落库（Stage 14）：命中规则 id / 类别 / 动作（block/flag/pass）
+        # Meta 影子预测随图轨迹落库（Stage 27）：decision/actual/agree/model——
+        # 分歧率分析与真实特征表重训的数据来源
         graph_trace_json={
             "trace": state.get("graph_trace", []),
             **({"guardrail": state["guardrail"]} if state.get("guardrail") else {}),
+            **({"meta_shadow": state["meta_shadow"]} if state.get("meta_shadow") else {}),
         },
         latency_json=state.get("latency") or {},
         error_json=state.get("error"),

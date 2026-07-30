@@ -11,6 +11,7 @@
 |---|---|
 | `intent_train_v41_clean_nodup.csv` | 原始数据（19641 行，35 标签，自带 train/val/test 划分）。**只读，不再修改** |
 | `intent_train_v42_project.csv` | **项目对齐版（训练用这份）**：由 v41 经映射规则清洗 + 补齐 FAQ.GENERAL 生成，标签与 taxonomy v2 完全一致。由 `scripts/build_intent_dataset.py` 生成，可重复构建 |
+| `meta_classifier_training.md` | **Meta-classifier 训练操作文档**（Stage 27）：学的是「对当前任务做什么操作」不是意图；数据在 `data/电商客服_MetaClassifier_合成训练数据_v1.csv`（12501 行合成表格特征），训练脚本 `scripts/train_meta_classifier.py` |
 
 ## 2. v41 质检结论（2026-07-02）
 

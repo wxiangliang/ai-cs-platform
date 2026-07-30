@@ -69,6 +69,8 @@ class GraphState(TypedDict, total=False):
     switch_candidate: str | None
     # UNKNOWN 有任务但无续接证据（Stage 26：不填槽不切换，回复二选一澄清）
     unknown_with_task: bool
+    # Meta-classifier 影子预测（Stage 27：只观察不决策，落 decision_log）
+    meta_shadow: dict[str, Any] | None
     # L3 弱确认降级重确认（Stage 13：回复前加提示语）
     weak_confirm_recheck: bool
     # 护栏拦截话术（Stage 14：response_generate 优先使用）
