@@ -56,6 +56,7 @@ class DecisionSource:
     SETFIT = "SETFIT"  # SetFit 模型高置信命中
     SETFIT_LOW_CONF = "SETFIT_LOW_CONF"  # 模型低置信，兜底 UNKNOWN
     SETFIT_LOW_MARGIN = "SETFIT_LOW_MARGIN"  # 高分但 top1-top2 分差小、二判不可用时采纳（Stage 26，软确认接住）
+    SETFIT_KNN_CONFIRMED = "SETFIT_KNN_CONFIRMED"  # margin 小但示例近邻同意 top1，免二判采纳（Stage 26 遗留 3，默认关）
     SETFIT_FALLBACK_RULE = "SETFIT_FALLBACK_RULE"  # 模型不可用，降级规则全表
     # —— LLM 层（Stage 04-01 / 05）——
     LLM = "LLM"  # SetFit 低置信难例的 LLM 二判命中
@@ -80,6 +81,7 @@ class IntentResult:
     top_k: list[dict[str, Any]] = field(default_factory=list)
     margin: float | None = None
     pending_fill: dict[str, Any] | None = None
+    example_knn: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转为可落库的 dict（用于 decision_log.intent_result_json）。"""
@@ -94,4 +96,6 @@ class IntentResult:
             result["margin"] = self.margin
         if self.pending_fill is not None:
             result["pending_fill"] = self.pending_fill
+        if self.example_knn is not None:
+            result["example_knn"] = self.example_knn
         return result

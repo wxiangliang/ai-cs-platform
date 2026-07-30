@@ -68,3 +68,43 @@ v41 的 13 条 `sample_type=multi_intent` 复合句样本（trainable=False，�
 2. 新增意图时：先在 taxonomy 注册 → 补充训练数据（每类 ≥300 条，含易混淆负例）→ 重训；
 3. 每次重训必须报告 test 集整体准确率与**逐类** F1，易混淆三组（taxonomy 第 6 节）单独看混淆矩阵；
 4. 线上 bad case（decision_log 中低置信/人工纠正样本）定期回流到数据集（Stage 09 评估平台闭环）。
+
+## 6. 示例向量交叉验证与 LTR 路线（功能已实现，默认关闭）
+
+> **给未来的自己**：这个功能做好了但没开，别忘了按下面的时机启用。
+> 实现：`app/chat/intent/example_knn.py`（接入混合分类器 margin 小分支）；
+> 索引构建：`scripts/build_intent_example_index.py`。
+
+**是什么**：SetFit top1/top2 分差小（margin < 0.10）的难例，现行做法是交
+LLM 二判（有成本）。本功能先查「训练集示例近邻」——用 SetFit 自己的语义体
+把难例和每类真实样本做余弦匹配：近邻**同意** top1 且平均相似度 ≥
+`INTENT_EXAMPLE_KNN_MIN_SIM` → 免二判直接采纳（`SETFIT_KNN_CONFIRMED`）；
+近邻**不同意** → 绝不改选，分歧证据落 `intent_result_json.example_knn`
+随决策日志入库，仍走二判。收益 = 省二判的 LLM 成本与延迟，风险 = 无
+（不同意时行为与现状完全一致）。
+
+**启用步骤与时机**（按序执行，缺一不可）：
+
+```text
+① 建索引（SetFit 模型重训后必须重建——分类与近邻必须同源表示）：
+   uv run python scripts/build_intent_example_index.py
+② .env 打开：INTENT_EXAMPLE_KNN_ENABLED=true
+③ 验收：uv run pytest tests/eval/ 意图评估门禁零回归
+④ 观察（上线后 1-2 周）：
+   - count_intent 指标里 SETFIT_KNN_CONFIRMED 占比 = 省掉的二判量；
+   - decision_source=LLM 占比应下降，错向监控（quality_queries 第 9 组）不上升；
+   - 相似度阈值 0.65 是待标定默认：从 decision_log 的 example_knn.similarity
+     分布看确认样本的正确率再调
+⑤ 建议启用时点：真实流量跑起来、LLM 二判成本可见之后（与 Meta 影子观察期同步）
+```
+
+**LTR 重排的路线**（2026-07-30 评审结论：先不做，前置在攒）：
+
+```text
+现在                 数据成熟后（人工确认难例 ≥ 数千条）
+KNN 交叉验证    →    LightGBM LambdaRank 重排 TopK（零新依赖，train 组已有）
+（本节功能）          训练数据来源 = export_review_set.py 回流的二判改判样本
+                     插入位置 = SetFit 与 LLM 二判之间做分流
+                     验证 = A/B 框架（Stage 18）对比二判量下降 & 错向率不升
+                     触发信号 = LLM 来源意图占比高 / 二判改判率差
+```

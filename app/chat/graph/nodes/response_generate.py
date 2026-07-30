@@ -135,7 +135,9 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
         and (
             source in (DecisionSource.LLM, DecisionSource.SETFIT_LOW_MARGIN)
             or (
-                source == DecisionSource.SETFIT
+                # KNN 确认来源按 SETFIT 同规则：近邻同意解决的是 margin 疑虑，
+                # 置信度本身仍低时新开任务照样复述纠偏
+                source in (DecisionSource.SETFIT, DecisionSource.SETFIT_KNN_CONFIRMED)
                 and float(intent_dict.get("confidence", 1.0)) < soft_line
             )
         )

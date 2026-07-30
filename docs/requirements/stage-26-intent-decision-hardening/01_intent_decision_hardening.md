@@ -285,6 +285,10 @@ UNKNOWN 收紧：有证据只并入pending槽位 / 无证据不填槽不切换 /
 1. 全部阈值（采纳线/margin/切换线/软确认线）真实流量标定，含按
    dialog state 分层统计口径（SQL 进 quality_queries 待流量后补）；
 2. 混淆意图对级 min_margin 配置；
-3. examples-only 向量 TopK 交叉验证（第三信号源）；
+3. ~~examples-only 向量 TopK 交叉验证~~ ✅ 已实现（2026-07-30，**默认关闭**）：
+   `app/chat/intent/example_knn.py`（margin 小难例查训练集近邻，同意 top1
+   免二判采纳 `SETFIT_KNN_CONFIRMED`、不同意只附证据绝不改选）+
+   `scripts/build_intent_example_index.py`；启用时机清单与 LTR 后续路线
+   见 docs/intent/README.md 第 6 节；
 4. 更贴线上的分类评估集（会话级拆分防泄漏、OOS 参与、多轮短回复参与）；
 5. meta-classifier / 意图转移统计（需标注流量）。

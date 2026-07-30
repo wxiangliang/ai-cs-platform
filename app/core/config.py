@@ -254,6 +254,18 @@ class Settings(BaseSettings):
     # 写意图软确认线（单列高于采纳线 0.60，修复采纳线==软确认线的死区）
     INTENT_SOFT_CONFIRM_THRESHOLD_WRITE: float = 0.75
 
+    # ----- 示例向量交叉验证（Stage 26 遗留 3，功能已实现**默认关闭**）-----
+    # 启用时机与验收清单见 docs/intent/README.md「示例向量交叉验证与 LTR 路线」：
+    # 建索引（scripts/build_intent_example_index.py）→ 意图评估门禁零回归 →
+    # 上线观察二判量下降后保持开启。margin 小的难例先查训练集近邻，
+    # 近邻同意 top1 → 免 LLM 二判直接采纳（SETFIT_KNN_CONFIRMED）
+    INTENT_EXAMPLE_KNN_ENABLED: bool = False
+    # 近邻数与确认所需最低平均余弦相似度（待真实 embedding 分布标定）
+    INTENT_EXAMPLE_KNN_TOPK: int = 5
+    INTENT_EXAMPLE_KNN_MIN_SIM: float = 0.65
+    # 索引产物目录（不进 git，锚定仓库根）
+    INTENT_EXAMPLE_INDEX_DIR: str = "models/intent_example_index"
+
     # ----- Stage 27 Meta-classifier 影子模式 -----
     # 影子模式：模型对每轮语义层决策做预测、落决策日志、出分歧率指标，
     # **不驱动任何决策**（合成数据模型不碰生产决策的红线）。

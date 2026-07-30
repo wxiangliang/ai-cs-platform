@@ -123,9 +123,35 @@ class HybridIntentClassifier:
         # 二判不可用/失败时仍采纳 top1（绝不自动改选 top2——评审纪律），
         # 打 SETFIT_LOW_MARGIN 来源交下游软确认接住（response_generate）——
         if margin < settings.INTENT_MIN_MARGIN:
+            # —— 示例向量交叉验证（默认关，启用时机见 docs/intent/README）：
+            # 训练集近邻是独立于分类头的第二信号——近邻同意 top1 且相似度
+            # 达标 → 免二判直接采纳（省 LLM 成本）；不同意 → 只附证据仍走
+            # 二判，绝不按近邻改选 ——
+            knn_evidence: dict | None = None
+            if settings.INTENT_EXAMPLE_KNN_ENABLED:
+                from app.chat.intent.example_knn import example_knn_index
+
+                knn_evidence = await asyncio.to_thread(
+                    example_knn_index.query, normalized
+                )
+                if (
+                    knn_evidence is not None
+                    and knn_evidence.get("label") == label
+                    and float(knn_evidence.get("similarity", 0.0))
+                    >= settings.INTENT_EXAMPLE_KNN_MIN_SIM
+                ):
+                    return IntentResult(
+                        pred_label=label,
+                        confidence=confidence,
+                        decision_source=DecisionSource.SETFIT_KNN_CONFIRMED,
+                        top_k=top_k,
+                        margin=margin,
+                        example_knn=knn_evidence,
+                    )
             second = await self._llm_second_opinion(normalized, top_k)
             if second is not None:
                 second.margin = margin
+                second.example_knn = knn_evidence
                 return second
             return IntentResult(
                 pred_label=label,
@@ -133,6 +159,7 @@ class HybridIntentClassifier:
                 decision_source=DecisionSource.SETFIT_LOW_MARGIN,
                 top_k=top_k,
                 margin=margin,
+                example_knn=knn_evidence,
             )
 
         return IntentResult(

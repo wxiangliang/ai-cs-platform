@@ -57,6 +57,13 @@ class SetFitIntentModel:
                 logger.exception("failed to load setfit model: %s", path)
                 self._unavailable = True
 
+    def encode(self, text: str) -> Any:
+        """返回归一化句向量（shape (dim,)）。示例向量交叉验证复用同一语义体，
+        保证「分类的表示」与「近邻的表示」同源。调用前必须确认 available。"""
+        model = self._model
+        assert model is not None, "setfit model not loaded"
+        return model.model_body.encode([text], normalize_embeddings=True)[0]
+
     def predict(self, text: str, top_k: int = 3) -> tuple[str, float, list[dict[str, Any]]]:
         """同步推理：返回 (预测标签, 置信度, top_k 列表)。
 
