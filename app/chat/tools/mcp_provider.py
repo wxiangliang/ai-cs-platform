@@ -41,6 +41,9 @@ class McpToolProvider:
         # 最后一次成功发现的工具集：服务临时不可达时据此区分
         # 「MCP 覆盖的读工具」（按 fallback 策略处理）与「从未覆盖的写工具」（走 mock）
         self._last_known_tools: set[str] = set()
+        # 工具元数据 {name: (readOnlyHint, description)}：只读白名单推导用
+        # （post-stage-27 ②，收口 Stage 22「MCP 新读工具同步白名单」遗留）
+        self._tool_meta: dict[str, tuple[bool, str]] = {}
         self._discovery_failed = False
         self._discovered_at = 0.0
         self._lock = asyncio.Lock()
@@ -63,13 +66,14 @@ class McpToolProvider:
             ):
                 return self._mcp_tools
             try:
-                tools = await asyncio.wait_for(
+                meta = await asyncio.wait_for(
                     self._list_tools_once(), timeout=settings.MCP_TIMEOUT
                 )
-                self._mcp_tools = tools
-                self._last_known_tools = set(tools)
+                self._mcp_tools = set(meta)
+                self._last_known_tools = set(meta)
+                self._tool_meta = meta
                 self._discovery_failed = False
-                logger.info("mcp tools discovered: %s", sorted(tools))
+                logger.info("mcp tools discovered: %s", sorted(meta))
             except Exception:  # noqa: BLE001 - 服务不可达 → 全部回落 mock
                 logger.exception("mcp tool discovery failed, all tools fallback to mock")
                 self._mcp_tools = set()
@@ -77,8 +81,21 @@ class McpToolProvider:
             self._discovered_at = time.monotonic()
             return self._mcp_tools
 
+    async def readonly_tools(self) -> dict[str, str]:
+        """服务端声明 readOnlyHint=true 的工具（name → 描述）。
+
+        诊断 agent 白名单合并用（post-stage-27 ②）：deny-by-default——
+        未声明只读注解的工具一律不返回；目录写工具的红线过滤在合并侧。
+        """
+        await self._discover_tools()
+        return {
+            name: desc or name
+            for name, (readonly, desc) in self._tool_meta.items()
+            if readonly
+        }
+
     @staticmethod
-    async def _list_tools_once() -> set[str]:
+    async def _list_tools_once() -> dict[str, tuple[bool, str]]:
         from mcp import ClientSession
         from mcp.client.streamable_http import streamablehttp_client
 
@@ -86,7 +103,16 @@ class McpToolProvider:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
-                return {t.name for t in result.tools}
+                meta: dict[str, tuple[bool, str]] = {}
+                for t in result.tools:
+                    # MCP 协议标准注解：annotations.readOnlyHint（缺省视为非只读）
+                    readonly = bool(
+                        getattr(getattr(t, "annotations", None), "readOnlyHint", False)
+                    )
+                    # 描述取首行（进决策 prompt，防长文膨胀）
+                    desc = (t.description or "").strip().splitlines()[0][:80] if t.description else ""
+                    meta[t.name] = (readonly, desc)
+                return meta
 
     @staticmethod
     async def _call_tool_once(tool_id: str, params: dict[str, Any]) -> dict[str, Any]:

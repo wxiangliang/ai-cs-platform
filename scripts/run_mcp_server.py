@@ -20,20 +20,26 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.types import ToolAnnotations  # noqa: E402
 
 from app.chat.tools import mock_data  # noqa: E402
+
+# 只读注解（MCP 协议标准）：客户端据此把工具并入诊断 agent 白名单
+# （post-stage-27 ②）。新增查询工具必须带它；写工具**禁止**声明——
+# 即使误声明，客户端目录红线也会拒绝（catalog.is_declared_write_tool）
+_READONLY = ToolAnnotations(readOnlyHint=True)
 
 
 def build_server(host: str, port: int) -> FastMCP:
     """构建 MCP 服务（独立函数便于测试）。"""
     server = FastMCP("ai-cs-business-tools", host=host, port=port)
 
-    @server.tool()
+    @server.tool(annotations=_READONLY)
     def query_order(order_id: str, tenant_id: str = "") -> dict[str, Any]:
         """查询订单状态：返回订单当前状态、商品、金额、运单号（已发货时）。"""
         return mock_data.order_data(tenant_id, order_id)
 
-    @server.tool()
+    @server.tool(annotations=_READONLY)
     def query_logistics_track(order_id: str, tenant_id: str = "") -> dict[str, Any]:
         """查询物流轨迹：返回最新进度、轨迹事件与预计送达时间。"""
         return mock_data.logistics_data(tenant_id, order_id)

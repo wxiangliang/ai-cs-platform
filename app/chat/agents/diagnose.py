@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.chat.llm.factory import chat_completion, llm_available
 from app.chat.llm.prompt_guard import wrap_user_input
 from app.chat.tools.base import mask_sensitive
+from app.chat.tools.catalog import is_declared_write_tool, readonly_tool_descriptions
 from app.chat.tools.factory import get_tool_provider
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -33,17 +34,12 @@ from app.repositories.chat_tool_call_repository import chat_tool_call_repository
 
 logger = get_logger(__name__)
 
-# 只读工具白名单：id → 一句话描述（决策 prompt 程序化生成，禁止手抄）。
-# 必须与 mock/MCP 工具目录的只读段保持一致；新增读工具需同步两处。
-# 红线：本表**永不**收录 create_*/cancel_*/update_* 等写操作
-READONLY_TOOLS: dict[str, str] = {
-    "query_order": "查询订单状态/金额/运单号（参数 order_id）",
-    "query_logistics_track": "查询物流轨迹与最新进度（参数 order_id）",
-    "query_refund_policy": "查询退款/退货政策（无参数）",
-    "query_shipping_policy": "查询运费/配送政策（无参数）",
-    "query_product": "查询商品价格/库存（参数 product_name）",
-    "query_user_coupons": "查询用户可用优惠券（无参数）",
-}
+# 只读工具白名单：从工具目录声明推导（post-stage-27 ②，不再手抄）。
+# 新增进程内读工具 → 在 catalog.py 声明 readonly=True 即入列；
+# MCP 服务新增读工具 → 声明 readOnlyHint 注解，运行时经 _readonly_toolset
+# 合并（收口 Stage 22 遗留）。红线不变：写工具无论谁声明什么都进不来
+# （目录 readonly=False 优先，见 _readonly_toolset 过滤）
+READONLY_TOOLS: dict[str, str] = readonly_tool_descriptions()
 
 # 解释性问句启发式：命中才值得多步调查（纯查询"到哪了"静态链已够）
 _NEEDS_DIAGNOSIS_RE = re.compile(r"为什么|为啥|怎么还|咋还|怎么回事|什么情况|怎么办|是不是出|正常吗")
@@ -92,9 +88,32 @@ def needs_diagnosis(text: str) -> bool:
     return bool(_NEEDS_DIAGNOSIS_RE.search(text or ""))
 
 
-def _tools_prompt() -> str:
+def _tools_prompt(tools: dict[str, str]) -> str:
     """白名单工具清单（程序化生成进决策 prompt）。"""
-    return "\n".join(f"- {tid}：{desc}" for tid, desc in READONLY_TOOLS.items())
+    return "\n".join(f"- {tid}：{desc}" for tid, desc in tools.items())
+
+
+async def _readonly_toolset() -> dict[str, str]:
+    """本轮可用的只读工具集：目录推导 + MCP readOnlyHint 声明合并。
+
+    红线过滤：目录声明为写的工具，即使 MCP 服务把它标成只读也拒绝
+    （外部服务声明不可信，post-stage-27 文档遗留 2）；MCP 侧任何异常
+    只丢增量不丢基础白名单。
+    """
+    tools = dict(READONLY_TOOLS)
+    provider = get_tool_provider()
+    remote = getattr(provider, "readonly_tools", None)
+    if remote is None:
+        return tools
+    try:
+        for tool_id, desc in (await remote()).items():
+            if is_declared_write_tool(tool_id):
+                logger.warning("mcp declared write tool as readonly, rejected: %r", tool_id[:40])
+                continue
+            tools.setdefault(tool_id, desc)
+    except Exception:  # noqa: BLE001 - 合并失败退回基础白名单
+        logger.warning("mcp readonly tools merge failed", exc_info=True)
+    return tools
 
 
 def _parse_decision(raw: str) -> dict[str, Any] | None:
@@ -146,7 +165,9 @@ async def run_diagnose(
     called: set[str] = set()  # (tool_id + 参数指纹) 去重——重复调用即终止
     failures = 0
     provider = get_tool_provider()
-    decide_system = _DECIDE_SYSTEM.replace("{tools}", _tools_prompt())
+    # 本轮工具集：目录只读 + MCP readOnlyHint（post-stage-27 ②）
+    available_tools = await _readonly_toolset()
+    decide_system = _DECIDE_SYSTEM.replace("{tools}", _tools_prompt(available_tools))
 
     # —— 决策循环（步数硬上限；每个 break 都是结构性终止）——
     for _ in range(max(1, settings.DIAGNOSE_MAX_STEPS)):
@@ -160,7 +181,7 @@ async def run_diagnose(
         if decision is None or decision.get("action") != "call":
             break  # answer / 解析失败 / LLM 不可用 → 进入综合
         tool_id = str(decision.get("tool_id", ""))
-        if tool_id not in READONLY_TOOLS:
+        if tool_id not in available_tools:
             logger.warning("diagnose requested non-whitelist tool: %r", tool_id[:40])
             break
         params = _sanitize_params(decision.get("params"), slots)

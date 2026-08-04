@@ -124,14 +124,20 @@ def _route_after_skill(state: GraphState) -> str:
 
 
 def build_chat_graph():
-    """构建并编译聊天主链路图。"""
+    """构建并编译聊天主链路图。
+
+    节点一律经写契约包装（post-stage-27 工程护栏）：越权写 GraphState
+    字段在 dev/test 直接抛错、prod 只告警——契约表见 graph/contracts.py。
+    """
+    from app.chat.graph.contracts import enforce_write_contract
+
     graph = StateGraph(GraphState)
 
     for name, fn in _LINEAR_SEQUENCE:
-        graph.add_node(name, fn)
+        graph.add_node(name, enforce_write_contract(name, fn))
     for name, fn in _REPLY_NODES.items():
-        graph.add_node(name, fn)
-    graph.add_node("save_turn", save_turn)
+        graph.add_node(name, enforce_write_contract(name, fn))
+    graph.add_node("save_turn", enforce_write_contract("save_turn", save_turn))
 
     # 线性段（blocked 条件边：短路/拦截轮次提前跳到回复生成，不空跑透传节点）
     graph.add_edge(START, "load_session_state")

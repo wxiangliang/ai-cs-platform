@@ -14,7 +14,7 @@
 | Query Normalization | 仅全半角/空白归一 | ✅ **新增**：繁简转换（zhconv）、同义词扩展（内置词表可扩展，扩展词只进关键词路）、型号/单号识别；拼写纠错暂缓（需专门模型，收益/成本比低） |
 | Intent+Slot 选择 Retriever | ✅ 已有（检索路由矩阵 R1-R5：商品→商品库优先、政策→FAQ+向量、订单→工具、模糊→FAQ+向量） | 保持 |
 | 多路召回 | 已有向量+关键词+FAQ 三路，但窄召回（top5） | ✅ **加宽**：各路 `RAG_RECALL_TOP_K`（默认 20）召回，融合/重排后截 `RAG_TOP_K` |
-| 结果融合 | ✅ 已用 RRF（参考方案推荐的方案二） | ✅ **升级为动态加权 RRF**（方案二强化）：precise 查询（含型号/单号——向量对其不可靠）关键词路权重 1.5；semantic 查询向量路权重 1.2 |
+* | 结果融合 | ✅ 已用 RRF（参考方案推荐的方案二） | ✅ **升级为动态加权 RRF**（方案二强化）：precise 查询（含型号/单号——向量对其不可靠）关键词路权重 1.5；semantic 查询向量路权重 1.2 |
 | 过滤（tenant/enabled 等） | ✅ tenant 强制、status=active 过滤已有 | language/effective_time 字段位于 metadata_json，过滤钩子随租户需求启用（记录在案） |
 | **Rerank** | ❌ 无 | ✅ **新增** Reranker 协议：`RERANKER_PROVIDER=off|local`（本地 CrossEncoder，默认 BGE reranker，懒加载线程池，失败自动降级 RRF 序）。默认 off——CPU 环境先不强制，生产建议开 |
 | **上下文组装（父子分块）** | ❌ 只有子块 + 标题路径注入 | ✅ **新增**：kb_chunk 加 `section_path` 列（标题路径连接串），命中子块按 (document, section) 聚合章节兄弟块为 `section_context`（行级去重、字符上限），生成与摘录都优先用章节上下文——「运费谁承担」这类分情形答案不再断章 |
