@@ -303,6 +303,12 @@ class Settings(BaseSettings):
     PROACTIVE_ONBOARDING_ENABLED: bool = True
     PROACTIVE_ONBOARDING_MAX: int = 2
 
+    # ----- Stage 36 事件驱动主动客服 -----
+    # 业务事件（POST /api/events）→ 幂等/退订/静默/重查最新事实 → 主动消息。
+    # 默认关=零回归；静默时间如 "22-8"（跨零点），空=不启用
+    EVENTS_ENABLED: bool = False
+    EVENTS_QUIET_HOURS: str = ""
+
     # ----- Stage 35 身份核验分级（IAL）-----
     # 工具最低等级声明在 app/chat/tools/catalog.py（单一事实来源）；
     # 开发默认 2=沙盒互信零回归；生产按需下调（1 → 改地址等 IAL2 工具

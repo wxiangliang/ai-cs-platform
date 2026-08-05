@@ -37,6 +37,11 @@ TABLE: dict[str, str] = {
     "intent.switch_clarify_collecting": "我这边还在处理「{name}」：{question}如果您想先办理「{new_name}」，请再明确说一下，我会先挂起当前业务。",
     "intent.switch_clarify_confirming": "当前「{name}」正在等待您的确认：{question}如需办理「{new_name}」，请先回复「确认」或「不用」结束当前步骤。",
     "intent.unknown_with_task": "抱歉，我没太理解这句话。如果是继续办理「{name}」，{question}如果想咨询或办理其他业务，直接说明您的诉求即可。",
+    # —— Stage 36 事件驱动主动通知 ——
+    "event.shipment_delayed": "您好，您的订单 {order_id} 配送出现延迟，非常抱歉。最新进度：{latest}（{eta}）。如需进一步帮助，直接回复我就可以。",
+    "event.refund_status": "您好，您的订单 {order_id} 退款状态有更新：{status}。如有疑问随时回复咨询。",
+    "event.back_in_stock": "好消息！您关注的「{product_name}」已经到货，现在下单可尽快安排发货～",
+    "event.coupon_expiring": "提醒您：您有一张优惠券即将到期（{expire}），记得在有效期内使用哦。",
     # —— Stage 35 身份核验 ——
     "identity.verify_required": "为保障您的账户安全，这项操作需要先核实身份。我已为您转接人工客服协助核实，请稍候；核实通过后即可继续办理。",
     # —— Stage 31 主动服务 ——
