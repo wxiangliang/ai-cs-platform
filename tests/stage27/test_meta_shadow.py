@@ -116,6 +116,52 @@ def test_missing_artifacts_still_collects_features(monkeypatch, tmp_path):
         meta_shadow.reset_for_test()
 
 
+# ---------------- 原因码派生（决策融合层评审采纳项） ----------------
+
+
+def test_reason_codes_derivation():
+    s = _state(source=DecisionSource.LLM)
+    s["intent_result"]["example_knn"] = {"label": "ORDER.QUERY_STATUS", "similarity": 0.7}
+    features = meta_shadow.build_features(s, s["intent_result"])
+    codes = meta_shadow.derive_reason_codes(features, s["intent_result"])
+    assert "llm_second_opinion" in codes
+    assert "knn_disagrees_top1" in codes  # KNN 说 ORDER，top1 是 LOGISTICS
+    assert "has_active_task" in codes
+    assert "differs_from_active_task" in codes  # 任务是退款，top1 是物流
+
+
+def test_reason_codes_low_margin_and_agreement():
+    s = _state()
+    s["intent_result"].update({"confidence": 0.78, "margin": 0.02})
+    s["intent_result"]["top_k"] = [
+        {"label": "LOGISTICS.TRACK", "score": 0.78},
+        {"label": "ORDER.QUERY_STATUS", "score": 0.76},
+    ]
+    s["intent_result"]["example_knn"] = {"label": "LOGISTICS.TRACK", "similarity": 0.9}
+    features = meta_shadow.build_features(s, s["intent_result"])
+    codes = meta_shadow.derive_reason_codes(features, s["intent_result"])
+    assert "low_margin" in codes
+    assert "knn_agrees_top1" in codes
+
+
+def test_reason_codes_in_shadow_record(monkeypatch, tmp_path):
+    """原因码随影子记录落库（产物缺失也照采——与特征采集同层）。"""
+    monkeypatch.setattr(settings, "META_SHADOW_DIR", str(tmp_path / "nope"))
+    meta_shadow.reset_for_test()
+    try:
+        record = meta_shadow.shadow_predict(_state(), {"switch_candidate": "X"})
+        assert record is not None
+        assert isinstance(record["reason_codes"], list)
+        assert "has_active_task" in record["reason_codes"]
+    finally:
+        meta_shadow.reset_for_test()
+
+
+def test_knn_confirmed_source_in_shadow_scope():
+    """KNN 确认来源是语义层决策，属影子部署域（口径修正）。"""
+    assert DecisionSource.SETFIT_KNN_CONFIRMED in meta_shadow._SHADOW_SOURCES
+
+
 # ---------------- 对照口径 ----------------
 
 

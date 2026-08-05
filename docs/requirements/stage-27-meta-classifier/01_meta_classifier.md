@@ -151,6 +151,37 @@ UNKNOWN 无任务 → UNKNOWN；任务中切换成功 → SWITCH_NEW；其余新
 ACCEPT_NEW_INTENT。UNKNOWN 与 ASK_CLARIFICATION 的边界为近似（链路里
 两者都走 Stage 21 澄清），真实化后细分。
 
+### 4.6 阶段 B 输出契约（2026-08-05 决策融合层评审固化，接管实施时照此做）
+
+定位再确认：Meta-classifier 是**意图决策融合层**，不是文本分类器
+（message 永在泄漏黑名单；输入=规则/SetFit/KNN/任务上下文的表格证据；
+输出=对当前任务的操作决策）。接管时的输出对象：
+
+```jsonc
+{
+  "decision": "SWITCH_NEW",            // 6 类之一，唯一权威输出
+  "final_intent": "AFTERSALE.REFUND",  // 采纳的意图码（SEND_TO_LLM/澄清/UNKNOWN 时可空）
+  "confidence": 0.89,                  // 决策概率——必须先经真实数据校准（遗留 4）才可用于阈值
+  "need_llm": false,                   // == decision==SEND_TO_LLM（显式化便于路由代码直读）
+  "need_clarification": false,         // == decision==ASK_CLARIFICATION
+  "evidence": { /* 特征快照（同 meta_shadow.features）+ example_knn/margin */ },
+  "reason_codes": ["low_margin", "knn_agrees_top1", "differs_from_active_task"],
+  "model": "lgbm_v2",
+  "contract_version": 1
+}
+```
+
+契约纪律：
+
+1. **不进学习层的决策**（保持结构性，模型输出不含也不影响）：
+   RAG/FAQ 路由（确定性矩阵 R1-R5）、任务挂起/恢复执行（SWITCH 决策的
+   挂起动作由状态机结构完成，LIFO/TTL 恢复照旧）、确认门与 L3 安全约束
+   （模型任何输出都不能绕过——结构保证非模型自觉）；
+2. `reason_codes` 是证据的**纯派生**（`derive_reason_codes`，✅ 影子期已落库
+   随 graph_trace_json.meta_shadow）——审核与分歧分析免翻 JSON，可 SQL 聚合；
+3. 影子记录即契约的前身：features/actual/decision/agree/reason_codes 已按
+   本形状积累，接管时只是把 decision 从「记录」升级为「生效」+补齐显式字段。
+
 ## 5. 验收标准
 
 1. `uv run python scripts/train_meta_classifier.py` 在部署域跑通四模型对比，

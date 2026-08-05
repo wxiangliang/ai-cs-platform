@@ -30,12 +30,14 @@ from app.core.metrics import count_meta_shadow
 logger = get_logger(__name__)
 
 # 部署域来源：控制层（RULE_KEYWORD/CONFIRM_GATE/SLOT_ONLY/PENDING_SLOT/TASK_DENY）
-# 短路的轮次运行时到不了 Meta 层，与训练域 control_result==NONE 对齐
+# 短路的轮次运行时到不了 Meta 层，与训练域 control_result==NONE 对齐；
+# KNN 确认来源也是语义层决策（margin 难例的免二判采纳），属部署域
 _SHADOW_SOURCES = frozenset(
     {
         DecisionSource.SETFIT,
         DecisionSource.SETFIT_LOW_CONF,
         DecisionSource.SETFIT_LOW_MARGIN,
+        DecisionSource.SETFIT_KNN_CONFIRMED,
         DecisionSource.LLM,
         DecisionSource.RULE_FALLBACK,
     }
@@ -176,6 +178,45 @@ def build_features(state: dict[str, Any], intent_dict: dict[str, Any]) -> dict[s
     }
 
 
+def derive_reason_codes(
+    features: dict[str, Any], intent_dict: dict[str, Any]
+) -> list[str]:
+    """从证据派生原因码（2026-08-05 决策融合层评审采纳项）。
+
+    目的：审核/分歧分析不用人肉翻 JSON 推原因——「为什么这轮是难例/
+    为什么像切换」直接可读可 SQL 聚合。纯派生（证据的确定函数），
+    不新增信息、不参与任何决策；码表按需扩展，改动同步本函数与测试。
+    """
+    codes: list[str] = []
+    source = intent_dict.get("decision_source")
+    if source == DecisionSource.LLM:
+        codes.append("llm_second_opinion")
+    if source == DecisionSource.SETFIT_KNN_CONFIRMED:
+        codes.append("knn_confirmed_skip_llm")
+    if features.get("setfit_low_conf"):
+        codes.append("low_confidence")
+    if features.get("setfit_ambiguous"):
+        codes.append("low_margin")
+    # KNN 交叉验证与 top1 的一致性（开启 KNN 后才有该证据）
+    knn = intent_dict.get("example_knn")
+    if knn:
+        top1 = features.get("setfit_top1_label")
+        codes.append(
+            "knn_agrees_top1" if knn.get("label") == top1 else "knn_disagrees_top1"
+        )
+    # 任务上下文：进行中任务 + 新意图与其不同 = 潜在切换轮
+    if features.get("has_active_task"):
+        codes.append("has_active_task")
+        active = features.get("active_intent")
+        if active not in (None, "", "NONE") and active != features.get("setfit_top1_label"):
+            codes.append("differs_from_active_task")
+    if features.get("explicit_switch_signal"):
+        codes.append("explicit_switch_signal")
+    if features.get("suspended_task_count", 0):
+        codes.append("has_suspended_tasks")
+    return codes
+
+
 def map_actual_decision(state: dict[str, Any], result_state: dict[str, Any]) -> str:
     """把链路实际结局映射到 6 类决策码（分歧率的对照口径，**近似**）。
 
@@ -228,6 +269,7 @@ def shadow_predict(
         record: dict[str, Any] = {
             "features": features,
             "actual": map_actual_decision(state, result_state),
+            "reason_codes": derive_reason_codes(features, intent_dict),
         }
     except Exception:  # noqa: BLE001 - 影子失败绝不打断主链路
         logger.warning("meta shadow feature build failed", exc_info=True)

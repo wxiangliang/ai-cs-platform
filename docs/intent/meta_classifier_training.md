@@ -145,7 +145,10 @@ message 列已脱敏、仅供审核。契约防漂移：tests/stage27 断言导�
 配置：META_SHADOW_ENABLED=true（默认）/ META_SHADOW_MODEL=champion|lr|lgbm|xgb
      / META_SHADOW_DIR=models/meta_classifier_v1
 落库：decision_log.graph_trace_json.meta_shadow
-     = {decision: 影子预测, actual: 链路实际决策(近似口径), agree, model}
+     = {features: 特征向量, actual: 链路实际决策(近似口径),
+        reason_codes: 证据派生原因码(low_margin/knn_agrees_top1/
+        differs_from_active_task 等——审核免翻 JSON,可 SQL 聚合),
+        decision/agree/model: 模型产物在位时附加}
 指标：meta_shadow_total{decision, agree} —— 分歧率 = agree=false 占比
 降级：产物缺失（models/ 不进镜像）/依赖缺失/异常 → 静默跳过，零行为影响
 ```
