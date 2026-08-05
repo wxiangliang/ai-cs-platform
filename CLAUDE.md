@@ -10,7 +10,7 @@
 
 1. `AGENTS.md`（全局规则与禁止事项）
 2. `docs/00_docs_management_standard.md`、`docs/README.md`
-3. `docs/architecture/roadmap.md`（总体路线图 Stage 01-09）、`docs/architecture/system_overview.md`（分层架构与主链路）
+3. `docs/architecture/roadmap.md`（总体路线图 Stage 01-09）、`docs/architecture/system_overview.md`（分层架构与主链路）、`docs/architecture/implementation_summary.md`（**给人看的实现总结**——各能力实现思路横向叙述，向人讲解/新人上手首选）
 4. `docs/chat/intent_taxonomy.md`（意图体系规范——意图码/优先级/风险等级的**单一事实来源**，改意图必先改它）
 5. 本次任务对应的阶段需求文档 `docs/requirements/stage-xx-*/`
 

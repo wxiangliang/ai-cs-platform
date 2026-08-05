@@ -4,9 +4,13 @@
 
 定位：基于 FastAPI、LangChain、LangGraph、PostgreSQL、Redis、Milvus 的 AI 客服聊天系统。
 
-> 配套阅读：`roadmap.md`（Stage 01-15 总体路线图与各阶段状态 + backlog）、
-> `../chat/intent_taxonomy.md`（意图体系规范，意图码/优先级/风险等级的单一事实来源）。
-> 本文档描述**当前已实现**的分层与主链路形态（2026-07-04，Stage 01-15 全部落地）。
+> 配套阅读：**`implementation_summary.md`（给人看的实现总结——每个能力怎么
+> 实现的横向叙述，截至 Stage 29，向人讲解首选这份）**、`roadmap.md`
+> （总体路线图与各阶段状态 + backlog）、`../chat/intent_taxonomy.md`
+> （意图体系规范，意图码/优先级/风险等级的单一事实来源）。
+> 本文档描述分层与主链路形态（写于 Stage 15；Stage 16-29 的增量——知识库
+> 运营/成本控制/A/B/澄清/诊断 agent/方向纠偏/意图决策加固/Meta-classifier/
+> 前端控制台——见 implementation_summary.md 与 CLAUDE.md 阶段进度表）。
 
 ---
 
