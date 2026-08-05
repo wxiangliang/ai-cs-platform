@@ -20,6 +20,7 @@ CREATE TABLE chat_decision_log (
 	latency_json JSONB, 
 	retrieval_json JSONB, 
 	error_json JSONB, 
+	experiment_json JSONB, 
 	id VARCHAR(36) NOT NULL, 
 	tenant_id VARCHAR(64) NOT NULL, 
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
@@ -47,6 +48,7 @@ COMMENT ON COLUMN chat_decision_log.graph_trace_json IS '图执行轨迹';
 COMMENT ON COLUMN chat_decision_log.latency_json IS '各阶段耗时';
 COMMENT ON COLUMN chat_decision_log.retrieval_json IS '检索过程';
 COMMENT ON COLUMN chat_decision_log.error_json IS '错误信息';
+COMMENT ON COLUMN chat_decision_log.experiment_json IS 'A/B 实验变体分配';
 COMMENT ON COLUMN chat_decision_log.id IS '主键，UUID 字符串';
 COMMENT ON COLUMN chat_decision_log.tenant_id IS '租户 ID';
 COMMENT ON COLUMN chat_decision_log.created_at IS '创建时间';

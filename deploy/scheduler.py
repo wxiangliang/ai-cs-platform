@@ -72,6 +72,11 @@ def build_jobs() -> list[Job]:
             cmd=[python, "scripts/refresh_quality_views.py"],
             interval=_env_interval("CRON_QUALITY_VIEWS_INTERVAL", 3600),
         ),
+        Job(
+            name="case_sla_check",
+            cmd=[python, "scripts/case_sla_check.py"],
+            interval=_env_interval("CRON_CASE_SLA_INTERVAL", 600),
+        ),
     ]
     enabled = [job for job in jobs if job.interval > 0]
     for job in jobs:

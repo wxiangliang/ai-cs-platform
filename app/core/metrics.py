@@ -102,6 +102,9 @@ ACTION_EXECUTIONS = Counter(
 # 转人工建单（reason 枚举 6 个）
 HANDOFF_TICKETS = Counter("handoff_tickets_total", "转人工建单次数", ["reason"])
 
+# Stage 34 服务 Case：event=opened/merged/resolved/closed/reopened/escalated/sla_warning
+SERVICE_CASES = Counter("service_cases_total", "服务 Case 生命周期事件", ["event"])
+
 # 限流触发（scope=tenant/session）
 RATE_LIMITED = Counter("rate_limited_total", "限流触发次数", ["scope"])
 
@@ -220,6 +223,11 @@ def count_action(tool_id: str | None, ok: bool) -> None:
     """记录一次写操作执行（ActionExecutor 收口调用）。"""
     label = tool_id if tool_id in _ACTION_TOOL_WHITELIST else "other"
     ACTION_EXECUTIONS.labels(tool_id=label, ok=str(ok).lower()).inc()
+
+
+def count_case(event: str) -> None:
+    """记一次服务 Case 生命周期事件（Stage 34）。"""
+    SERVICE_CASES.labels(event=event).inc()
 
 
 def count_handoff(reason: str) -> None:

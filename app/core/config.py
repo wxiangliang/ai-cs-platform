@@ -303,6 +303,15 @@ class Settings(BaseSettings):
     PROACTIVE_ONBOARDING_ENABLED: bool = True
     PROACTIVE_ONBOARDING_MAX: int = 2
 
+    # ----- Stage 34 Case 工单与 SLA 治理 -----
+    # SLA 解决时限（小时，按优先级）；超时由 cron（case_sla_check）升级 ESCALATED
+    CASE_SLA_HOURS_HIGH: int = 4
+    CASE_SLA_HOURS_NORMAL: int = 24
+    CASE_SLA_HOURS_LOW: int = 72
+    # 补偿政策表（Service Recovery，纯政策判定 LLM 不参与；示例
+    # configs/compensation_policies.example.json，缺失=一律不符合资格）
+    COMPENSATION_POLICY_PATH: str = "configs/compensation_policies.json"
+
     # ----- Stage 27 Meta-classifier 影子模式 -----
     # 影子模式：模型对每轮语义层决策做预测、落决策日志、出分歧率指标，
     # **不驱动任何决策**（合成数据模型不碰生产决策的红线）。

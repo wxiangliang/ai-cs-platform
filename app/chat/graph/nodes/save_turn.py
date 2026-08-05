@@ -28,6 +28,7 @@ from app.chat.skills.responder import render_reply
 from app.chat.state.types import DialogStateValue, TurnStatus
 from app.core.config import settings
 from app.core.i18n import t
+from app.core.logging import get_logger
 from app.core.metrics import count_confirm_gate
 from app.repositories.chat_dialog_state_repository import chat_dialog_state_repository
 from app.repositories.chat_message_repository import chat_message_repository
@@ -39,6 +40,8 @@ from app.services.handoff_service import (
     REASON_USER_REQUEST,
     handoff_service,
 )
+
+logger = get_logger(__name__)
 
 # 状态机状态 → chat_task 行状态
 _TASK_STATUS_BY_STATE = {
@@ -202,6 +205,21 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
             score=int(cap["score"]),
             trigger=cap.get("trigger", ""),
         )
+        # —— Stage 34：低分 CSAT（≤2）→ 服务质量 Case（fail-open 不打断落库）——
+        if int(cap["score"]) <= 2 and state.get("user_id"):
+            try:
+                from app.services.case_service import case_service
+
+                async with session.begin_nested():
+                    await case_service.open_or_merge(
+                        session,
+                        tenant_id=tenant_id,
+                        user_id=state["user_id"],
+                        reason="LOW_CSAT",
+                        refs={"sessions": [session_id]},
+                    )
+            except Exception:  # noqa: BLE001
+                logger.warning("low-csat service case failed", exc_info=True)
         cleared = dict(state.get("context_stacks") or {})
         cleared.pop("csat_pending", None)
         # 只更新上下文栈与状态（任务字段不传即不动）

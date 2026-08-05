@@ -1,0 +1,18 @@
+[
+  {
+    "policy_code": "EXECUTION_FAILURE_V1",
+    "case_types": ["EXECUTION_FAILURE"],
+    "min_priority": "HIGH",
+    "compensation_type": "COUPON",
+    "max_value": 100,
+    "requires_approval": true
+  },
+  {
+    "policy_code": "SERVICE_QUALITY_V1",
+    "case_types": ["SERVICE_QUALITY", "UNRESOLVED_QUERY"],
+    "min_priority": "NORMAL",
+    "compensation_type": "COUPON",
+    "max_value": 50,
+    "requires_approval": true
+  }
+]

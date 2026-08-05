@@ -87,6 +87,28 @@ class HandoffService:
         from app.core.metrics import count_handoff
 
         count_handoff(reason)
+        # —— Stage 34：建单成功 → 开/并服务 Case（一个收口点覆盖五类触发）。
+        # 工单是 Case 的一次人工协作动作；Case 失败绝不打断建单与主链路 ——
+        try:
+            from app.services.case_service import case_service
+
+            order_id = (
+                (context.get("active_task") or {}).get("collected_slots") or {}
+            ).get("order_id")
+            async with session.begin_nested():
+                await case_service.open_or_merge(
+                    session,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    reason=reason,
+                    refs={
+                        "sessions": [session_id],
+                        "tickets": [ticket.id],
+                        "orders": [order_id] if order_id else [],
+                    },
+                )
+        except Exception:  # noqa: BLE001 - Case 失败不影响建单
+            logger.warning("open/merge service case failed", exc_info=True)
         # 坐席侧实时推送（Stage 15）：新工单进队列（publish 内部 fail-open）
         from app.services.notify_service import agents_channel, ws_hub
 

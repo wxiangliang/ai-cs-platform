@@ -13,7 +13,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routes import chat, handoff, health, kb, metrics, observe, product, ws
+from app.api.routes import cases, chat, handoff, health, kb, metrics, observe, product, ws
 from app.cache.redis_client import close_redis, init_redis
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -132,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(kb.router)
     app.include_router(product.router)
     app.include_router(handoff.router)
+    app.include_router(cases.router)
     app.include_router(observe.router)
     app.include_router(metrics.router)
     app.include_router(ws.router)
