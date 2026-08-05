@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-08-05",
+  "seed": 20260805,
+  "inputs": {
+    "intent_train_v41_clean_nodup.csv": {
+      "rows": 19641,
+      "sha256": "3d03be73daa77f395de33e952ba65287733a2ab60c5c419a11c1d587dc0dd220"
+    },
+    "intent_train_v42_project.csv": {
+      "rows": 20141,
+      "sha256": "ccba3860462cd3d7e7a278587bb12dbc4276bf70ff993d4c2c9675c4c96bec0d"
+    }
+  },
+  "outputs": {
+    "intent_train_v43_clean_nodup_mode_annotated.csv": {
+      "rows": 19641,
+      "sha256": "fc11d112c8b6416457163a695477ecd6e0a98e64ae40ee194d9bea1a8c347348"
+    },
+    "intent_train_v43_project_business.csv": {
+      "rows": 18384,
+      "classes": 25,
+      "sha256": "d0cf3e5d3250d39f80194f2fa4edd5e9c4739cce5a34acc7447369626f9a66c7"
+    },
+    "conversation_mode_train_v1.csv": {
+      "rows": 14400,
+      "mode_counts": {
+        "TASK_ONLY": 3600,
+        "SOCIAL_ONLY": 3600,
+        "MIXED": 3600,
+        "OOS": 3600
+      },
+      "split_counts": {
+        "train": 11647,
+        "val": 1236,
+        "test": 1517
+      },
+      "sha256": "85130738b3f0f9328b654f237c2a52ee434ce0f1522261761cc30cf65f97d2cf"
+    },
+    "conversation_mode_train_v1_audit.csv": {
+      "rows": 15,
+      "sha256": "1ab95d302b63245c8e2a491431e8901b9fd2638609fb937632f36480115c000f"
+    }
+  },
+  "project_excluded_intents": [
+    "CHITCHAT.GENERAL",
+    "CHITCHAT.THANKS",
+    "META.BOT_IDENTITY",
+    "META.UNKNOWN"
+  ],
+  "mode_label_contract": {
+    "SOCIAL_ONLY": "纯闲聊/身份社交，跳过业务 Intent LLM 二判",
+    "TASK_ONLY": "纯业务或服务控制请求，进入现有意图流水线",
+    "MIXED": "闲聊子句 + 业务子句，需分段且业务优先",
+    "OOS": "明确任务但超出客服业务范围",
+    "UNCERTAIN": "推理拒识状态，不作为训练标签"
+  },
+  "label_split_counts": {
+    "MIXED/test": 258,
+    "MIXED/train": 3101,
+    "MIXED/val": 241,
+    "OOS/test": 519,
+    "OOS/train": 2647,
+    "OOS/val": 434,
+    "SOCIAL_ONLY/test": 482,
+    "SOCIAL_ONLY/train": 2798,
+    "SOCIAL_ONLY/val": 320,
+    "TASK_ONLY/test": 258,
+    "TASK_ONLY/train": 3101,
+    "TASK_ONLY/val": 241
+  },
+  "validation": {
+    "normalized_text_duplicates": 0,
+    "cross_label_text_collisions": 0,
+    "business_project_contains_excluded_intents": false
+  }
+}

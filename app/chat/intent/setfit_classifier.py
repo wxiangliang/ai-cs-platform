@@ -72,8 +72,17 @@ class SetFitIntentModel:
         model = self._model
         assert model is not None, "setfit model not loaded"
         # normalize 后的向量 + 分类头概率
-        emb = model.model_body.encode([text], normalize_embeddings=True)
-        probs = model.model_head.predict_proba(emb)[0]
+        emb = model.model_body.encode([text], normalize_embeddings=True)[0]
+        return self.predict_from_embedding(emb, top_k=top_k)
+
+    def predict_from_embedding(
+        self, embedding: Any, top_k: int = 3
+    ) -> tuple[str, float, list[dict[str, Any]]]:
+        """用已有句向量做分类头推理（Stage 30 一轮只编码一次：
+        Mode Gate 与意图头共享同一 embedding，省掉重复的 body 前向）。"""
+        model = self._model
+        assert model is not None, "setfit model not loaded"
+        probs = model.model_head.predict_proba([embedding])[0]
         classes = list(model.model_head.classes_)
         ranked = sorted(zip(classes, probs), key=lambda x: x[1], reverse=True)[:top_k]
         top = [{"label": label, "score": round(float(p), 4)} for label, p in ranked]

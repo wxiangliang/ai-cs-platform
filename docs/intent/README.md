@@ -1,7 +1,8 @@
 # 意图训练数据集说明
 
-> 意图码的单一事实来源是 `docs/chat/intent_taxonomy.md`；本目录管理**训练数据**。
-> 当前用途：SetFit 语义意图分类器（见 `docs/requirements/stage-04-llm-integration/02_setfit_intent_classifier.md`）。
+> 意图码的单一事实来源是 `docs/chat/intent_taxonomy.md`；本目录管理**训练数据与两份训练操作文档**。
+> 训练 SetFit 看 `setfit_training.md`，训练 Meta-classifier 看 `meta_classifier_training.md`
+> ——两个不同的模型（前者答「什么意图」，后者答「对当前任务做什么操作」）。
 
 ---
 
@@ -9,9 +10,12 @@
 
 | 文件 | 说明 |
 |---|---|
-| `intent_train_v41_clean_nodup.csv` | 原始数据（19641 行，35 标签，自带 train/val/test 划分）。**只读，不再修改** |
-| `intent_train_v42_project.csv` | **项目对齐版（训练用这份）**：由 v41 经映射规则清洗 + 补齐 FAQ.GENERAL 生成，标签与 taxonomy v2 完全一致。由 `scripts/build_intent_dataset.py` 生成，可重复构建 |
-| `meta_classifier_training.md` | **Meta-classifier 训练操作文档**（Stage 27）：学的是「对当前任务做什么操作」不是意图；数据在 `data/电商客服_MetaClassifier_合成训练数据_v1.csv`（12501 行合成表格特征），训练脚本 `scripts/train_meta_classifier.py` |
+| `intent_train_v41_clean_nodup.csv` | 原始数据（19641 行，35 标签，自带 train/val/test 划分）。**只读，不再修改，训练不直接用它** |
+| `intent_train_v42_project.csv` | **项目对齐版（SetFit 训练用这份）**：由 v41 经映射规则清洗 + 补齐 FAQ.GENERAL 生成，标签与 taxonomy v2 完全一致。由 `scripts/build_intent_dataset.py` 生成，可重复构建 |
+| `setfit_training.md` | **SetFit 意图分类器训练操作文档**（Stage 04）：数据来源/训练命令与参数/acc≥0.90 验收门禁/回流合并/重训闭环清单（含 KNN 索引重建红线）；训练脚本 `scripts/train_setfit_intent.py` |
+| `meta_classifier_training.md` | **Meta-classifier 训练操作文档**（Stage 27）：学的是「对当前任务做什么操作」不是意图；数据在 `data/电商客服_MetaClassifier_合成训练数据_v1.csv`（12501 行合成表格特征）+ 影子回流，训练脚本 `scripts/train_meta_classifier.py` |
+| `mode_gate_training.md` | **Conversation Mode Gate 训练操作文档**（Stage 30）：判「闲聊/业务/混合/OOS」对话模式（第三条轴），共享 SetFit body；训练脚本 `scripts/train_mode_gate.py` |
+| `intent_mode_v43_package/` | **v43 数据包**（2026-08-05）：Mode Gate 四分类数据 `conversation_mode_train_v1.csv`（14400 行）+ v41 全量 mode 标注审计版 + **阶段 2 用**的 25 类业务版 SetFit 数据（Mode Gate 稳定前不要用它重训，stage-30 需求第 7/10 节红线） |
 
 ## 2. v41 质检结论（2026-07-02）
 

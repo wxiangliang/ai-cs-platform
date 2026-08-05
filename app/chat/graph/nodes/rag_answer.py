@@ -133,7 +133,11 @@ async def rag_answer(state: GraphState, config: RunnableConfig) -> dict[str, Any
         from app.chat.skills.llm_clarifier import generate_clarify_question
 
         question = await generate_clarify_question(
-            query, intent_dict.get("top_k") or [], state.get("memory"), state.get("locale")
+            query,
+            intent_dict.get("top_k") or [],
+            state.get("memory"),
+            state.get("locale"),
+            mode_gate=intent_dict.get("mode_gate"),
         )
         if question:
             trace_dict["clarify"] = True

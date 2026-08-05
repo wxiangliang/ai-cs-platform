@@ -54,12 +54,22 @@ async def generate_clarify_question(
     top_k: list[dict],
     memory: dict | None,
     locale: str | None = None,
+    mode_gate: dict | None = None,
 ) -> str | None:
     """生成针对性澄清问句；不满足条件/失败返回 None（调用方走固定模板）。
 
     locale 为保留参数：生成语言由 prompt「与用户消息一致」约定处理（Stage 19），
     未来若做模板化降级可用它查语言包。
     """
+    # —— Stage 30 OOS 能力边界（子开关默认关）：模式门高置信 OOS 轮
+    # （「帮我写段代码」）不该被追问澄清，直接回边界话术——确定性模板，
+    # 放在 LLM 可用性检查之前（无 Key 也生效），省一次澄清 LLM 调用 ——
+    from app.chat.mode.gate import evaluate_oos
+
+    if evaluate_oos(mode_gate):
+        from app.core.i18n import t
+
+        return t("mode.oos_boundary", locale)
     if not settings.CLARIFY_LLM_ENABLED or not llm_available():
         return None
     candidates = _business_candidates(top_k)

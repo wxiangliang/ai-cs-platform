@@ -86,11 +86,52 @@ class HybridIntentClassifier:
             result.decision_source = DecisionSource.SETFIT_FALLBACK_RULE
             return result
 
+        # —— 第 1.5 层：Conversation Mode Gate（Stage 30，默认关）——
+        # 共享 SetFit body：编码一次，mode head 与意图头消费同一句向量。
+        # 高置信纯闲聊（无业务反证）直通 MODE_SOCIAL 免二判；其余模式只落
+        # 影子证据，流水线照旧。产物缺失/异常 fail-open 走原路径（零回归）
+        mode_evidence: dict | None = None
+        embedding = None
+        if settings.MODE_GATE_ENABLED:
+            from app.chat.mode.gate import evaluate_social, mode_gate
+
+            if await asyncio.to_thread(lambda: mode_gate.available):
+                try:
+                    embedding = await asyncio.to_thread(
+                        setfit_intent_model.encode, normalized
+                    )
+                    mode_result = await asyncio.to_thread(mode_gate.predict, embedding)
+                except Exception:  # noqa: BLE001 - 门异常等同未启用
+                    logger.warning("mode gate failed, bypassed", exc_info=True)
+                    mode_result, embedding = None, None
+                if mode_result is not None:
+                    accepted, reason_codes = evaluate_social(
+                        mode_result, normalized, has_active_task
+                    )
+                    from app.core.metrics import count_mode
+
+                    count_mode(mode_result["mode"], accepted)
+                    mode_evidence = {**mode_result, "accepted": accepted,
+                                     "reason_codes": reason_codes}
+                    if accepted:
+                        return IntentResult(
+                            pred_label=IntentLabel.CHITCHAT_GENERAL,
+                            confidence=mode_result["score"],
+                            decision_source=DecisionSource.MODE_SOCIAL,
+                            mode_gate=mode_evidence,
+                        )
+
         # —— 第 2 层：SetFit 语义层（CPU 密集，线程池执行避免阻塞事件循环）——
         try:
-            label, confidence, top_k = await asyncio.to_thread(
-                setfit_intent_model.predict, normalized
-            )
+            if embedding is not None:
+                # 复用模式门那次编码（一轮只过一次 body 前向）
+                label, confidence, top_k = await asyncio.to_thread(
+                    setfit_intent_model.predict_from_embedding, embedding
+                )
+            else:
+                label, confidence, top_k = await asyncio.to_thread(
+                    setfit_intent_model.predict, normalized
+                )
         except Exception:  # noqa: BLE001 - 推理异常降级规则，不打断主链路
             logger.exception("setfit predict failed, fallback to rule classifier")
             result = await rule_intent_classifier.classify(
@@ -137,11 +178,13 @@ class HybridIntentClassifier:
                         top_k=top_k,
                         margin=margin,
                         example_knn=knn,
+                        mode_gate=mode_evidence,
                     )
             # —— 第 3 层：LLM 难例二判（成本只花在低置信样本上）——
             second = await self._llm_second_opinion(normalized, top_k)
             if second is not None:
                 second.margin = margin
+                second.mode_gate = mode_evidence
                 return second
             # 兜底 UNKNOWN：走澄清/知识库路径；top_k 保留供排查与数据回流
             return IntentResult(
@@ -150,6 +193,7 @@ class HybridIntentClassifier:
                 decision_source=DecisionSource.SETFIT_LOW_CONF,
                 top_k=top_k,
                 margin=margin,
+                mode_gate=mode_evidence,
             )
 
         # —— Stage 26 margin 路由：高分但分差小 → 视为难例交 LLM 二判；
@@ -180,11 +224,13 @@ class HybridIntentClassifier:
                         top_k=top_k,
                         margin=margin,
                         example_knn=knn_evidence,
+                        mode_gate=mode_evidence,
                     )
             second = await self._llm_second_opinion(normalized, top_k)
             if second is not None:
                 second.margin = margin
                 second.example_knn = knn_evidence
+                second.mode_gate = mode_evidence
                 return second
             return IntentResult(
                 pred_label=label,
@@ -193,6 +239,7 @@ class HybridIntentClassifier:
                 top_k=top_k,
                 margin=margin,
                 example_knn=knn_evidence,
+                mode_gate=mode_evidence,
             )
 
         return IntentResult(
@@ -201,6 +248,7 @@ class HybridIntentClassifier:
             decision_source=DecisionSource.SETFIT,
             top_k=top_k,
             margin=margin,
+            mode_gate=mode_evidence,
         )
 
     @staticmethod

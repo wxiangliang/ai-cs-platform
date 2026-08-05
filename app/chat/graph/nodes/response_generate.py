@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.chat.skills.registry import skill_registry
 from app.chat.skills.responder import render_reply
 from app.chat.skills.types import SkillKind
-from app.chat.state.types import TurnStatus
+from app.chat.state.types import DialogStateValue, TurnStatus
 from app.core.i18n import t
 
 
@@ -81,10 +81,26 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
             intent_dict.get("top_k") or [],
             state.get("memory"),
             locale,
+            mode_gate=intent_dict.get("mode_gate"),
         )
         if question:
             return {"reply": question, "graph_trace": ["response_generate:clarify"]}
     draft = render_reply(status, skill, collected, locale)
+
+    # —— Stage 30 SOCIAL_HOLD：模式门直通的闲聊插话且有任务在补槽 ——
+    # 状态机已保证任务/状态不动（CHITCHAT 类 DONE 语义），这里补续办提示：
+    # 闲聊回复后带一句「刚才的 XX 还在办理中」，不让社交插话中断补槽节奏。
+    # 确定性策略不进润色（Stage 30 需求第 5 节）
+    if (
+        intent_dict.get("decision_source") == DecisionSource.MODE_SOCIAL
+        and active_task
+        and state.get("current_state") == DialogStateValue.COLLECTING
+    ):
+        task_name = skill_registry.get(active_task.get("intent", "")).name
+        return {
+            "reply": draft + t("mode.social_resume", locale, name=task_name),
+            "graph_trace": ["response_generate:social_hold"],
+        }
 
     # —— Stage 26 切换守护拦截：任务进行中新意图证据不足，回复二选一澄清
     # （当前任务的追问/确认话术 + 候选新意图的明确引导），不进润色保持确定性 ——

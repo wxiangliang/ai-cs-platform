@@ -59,6 +59,9 @@ class DecisionSource:
     SETFIT_KNN_CONFIRMED = "SETFIT_KNN_CONFIRMED"  # margin 小但示例近邻同意 top1，免二判采纳（Stage 26 遗留 3，默认关）
     SETFIT_KNN_CHITCHAT = "SETFIT_KNN_CHITCHAT"  # 低置信闲聊救援：top1 是闲聊且近邻高相似同意，免二判采纳（零副作用意图专用）
     SETFIT_FALLBACK_RULE = "SETFIT_FALLBACK_RULE"  # 模型不可用，降级规则全表
+    # —— Conversation Mode Gate（Stage 30）——
+    # 模式门高置信纯闲聊直通（免二判；不进 Meta 影子部署域——闲聊在模式轴不在任务操作轴）
+    MODE_SOCIAL = "MODE_SOCIAL"
     # —— LLM 层（Stage 04-01 / 05）——
     LLM = "LLM"  # SetFit 低置信难例的 LLM 二判命中
     LLM_CONFIRM_GATE = "LLM_CONFIRM_GATE"  # 确认门含糊应答的 LLM 解析（Stage 05）
@@ -83,6 +86,9 @@ class IntentResult:
     margin: float | None = None
     pending_fill: dict[str, Any] | None = None
     example_knn: dict[str, Any] | None = None
+    # Stage 30：对话模式门证据 {mode, score, margin, accepted, reason_codes}
+    # ——接管轮（MODE_SOCIAL）与影子轮都带，观测/回流共用
+    mode_gate: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转为可落库的 dict（用于 decision_log.intent_result_json）。"""
@@ -99,4 +105,6 @@ class IntentResult:
             result["pending_fill"] = self.pending_fill
         if self.example_knn is not None:
             result["example_knn"] = self.example_knn
+        if self.mode_gate is not None:
+            result["mode_gate"] = self.mode_gate
         return result

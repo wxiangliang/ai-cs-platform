@@ -74,6 +74,13 @@ DIRECTION_CORRECTION = Counter(
 # 确认门结局：confirmed / denied / modified
 CONFIRM_GATE = Counter("confirm_gate_total", "确认门应答次数", ["outcome"])
 
+# Stage 30 对话模式门：mode=SOCIAL_ONLY/TASK_ONLY/MIXED/OOS（预测），
+# accepted=true 仅 SOCIAL 直通轮（v1 接管范围）；二判降幅看
+# llm_calls_total{purpose="classify"} 对比。多租户不进 label（基数纪律）
+CONVERSATION_MODE = Counter(
+    "conversation_mode_total", "对话模式门预测次数", ["mode", "accepted"]
+)
+
 # Meta-classifier 影子模式（Stage 27）：decision=影子预测的 6 类决策，
 # agree=与实际链路决策（Stage 26 阈值）是否一致——分歧率是接管评估的核心口径
 META_SHADOW = Counter(
@@ -180,6 +187,11 @@ def count_diagnose(outcome: str) -> None:
 def count_direction(kind: str) -> None:
     """记录一次方向纠偏触发（Stage 23，kind=task_denied/soft_confirm）。"""
     DIRECTION_CORRECTION.labels(kind=kind).inc()
+
+
+def count_mode(mode: str, accepted: bool) -> None:
+    """记一次对话模式门预测（Stage 30）。"""
+    CONVERSATION_MODE.labels(mode=mode, accepted=str(accepted).lower()).inc()
 
 
 def count_confirm_gate(outcome: str) -> None:

@@ -1,0 +1,16 @@
+﻿conversation_mode,split,source,count
+MIXED,test,generated_mode_v1,258
+MIXED,train,generated_mode_v1,3101
+MIXED,val,generated_mode_v1,241
+OOS,test,generated_mode_v1,519
+OOS,train,generated_mode_v1,2647
+OOS,val,generated_mode_v1,434
+SOCIAL_ONLY,test,generated_mode_v1,394
+SOCIAL_ONLY,test,intent_train_v42_project,88
+SOCIAL_ONLY,train,generated_mode_v1,1811
+SOCIAL_ONLY,train,intent_train_v42_project,987
+SOCIAL_ONLY,val,generated_mode_v1,232
+SOCIAL_ONLY,val,intent_train_v42_project,88
+TASK_ONLY,test,intent_train_v42_project,258
+TASK_ONLY,train,intent_train_v42_project,3101
+TASK_ONLY,val,intent_train_v42_project,241

@@ -31,7 +31,10 @@ logger = get_logger(__name__)
 
 # 部署域来源：控制层（RULE_KEYWORD/CONFIRM_GATE/SLOT_ONLY/PENDING_SLOT/TASK_DENY）
 # 短路的轮次运行时到不了 Meta 层，与训练域 control_result==NONE 对齐；
-# KNN 确认来源也是语义层决策（margin 难例的免二判采纳），属部署域
+# KNN 确认来源也是语义层决策（margin 难例的免二判采纳），属部署域。
+# MODE_SOCIAL（Stage 30 模式门闲聊直通）**刻意不在部署域**：闲聊在
+# 对话模式轴不在任务操作轴，Meta 不学也不加 CHITCHAT 类（双轴纪律，
+# 见 stage-30 需求第 2 节；测试锁定）
 _SHADOW_SOURCES = frozenset(
     {
         DecisionSource.SETFIT,

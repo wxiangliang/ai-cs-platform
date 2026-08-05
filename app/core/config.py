@@ -269,6 +269,24 @@ class Settings(BaseSettings):
     # 索引产物目录（不进 git，锚定仓库根）
     INTENT_EXAMPLE_INDEX_DIR: str = "models/intent_example_index"
 
+    # ----- Stage 30 Conversation Mode Gate（对话模式门）-----
+    # 规则控制层之后、业务意图分类之前判「闲聊/业务/混合/OOS」四模式，
+    # v1 只接管高置信 SOCIAL_ONLY（免 LLM 二判直接闲聊回复，任务保持+续办提示），
+    # 其余模式全部影子观察。默认关=零回归；产物缺失/异常一律 fail-open。
+    # mode head 共享 SetFit body（一轮只编码一次），SetFit 重训后必须重训
+    MODE_GATE_ENABLED: bool = False
+    # 产物目录（scripts/train_mode_gate.py 生成，锚定仓库根）
+    MODE_GATE_DIR: str = "models/mode_gate_v1"
+    # SOCIAL_ONLY 直通线（校准后概率）与 top1-top2 分差线——冷启动基线，
+    # 待真实流量按「业务误吞率/直通覆盖率/二判降幅」标定
+    MODE_GATE_SOCIAL_MIN_SCORE: float = 0.88
+    MODE_GATE_SOCIAL_MIN_MARGIN: float = 0.20
+    # 任务进行中（COLLECTING/CONFIRMING）闲聊插话要求更高置信
+    MODE_GATE_SOCIAL_MIN_SCORE_ACTIVE: float = 0.92
+    # OOS 高置信直接回能力边界话术（跳过澄清 LLM）；合成 OOS 数据未经真实
+    # 验证，默认关先影子观察误判分布
+    MODE_GATE_OOS_REPLY_ENABLED: bool = False
+
     # ----- Stage 27 Meta-classifier 影子模式 -----
     # 影子模式：模型对每轮语义层决策做预测、落决策日志、出分歧率指标，
     # **不驱动任何决策**（合成数据模型不碰生产决策的红线）。
