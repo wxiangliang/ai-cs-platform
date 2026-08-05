@@ -43,7 +43,11 @@ FastAPI + LangGraph 的**规则优先、模型辅助、LLM 兜底**客服对话�
 
 第 2.5 层 margin 路由 + 示例近邻交叉验证        hybrid_classifier.py + example_knn.py
   高分但 margin<0.10 = 分类头拿不准 → 先查训练集近邻（SetFit 同源向量）：
-  近邻同意 top1 → 免二判直接采纳；不同意 → 绝不改选，证据落库走第 3 层
+  近邻同意 top1 → 免二判直接采纳；不同意 → 绝不改选，证据落库走第 3 层。
+  低置信闲聊救援（客服家常高频的专项优化）：开放域家常（"今天真热"）
+  SetFit 常给低置信但 top1 就是闲聊类——近邻高相似同意（≥0.70，比 margin
+  确认线更严）→ 免二判采纳。红线：只救零副作用的 CHITCHAT.*，
+  业务意图低置信永不救援（近邻 0.95 同意也不救）
 
 第 3 层 LLM 难例二判（成本只花在难例上）        llm 二判 prompt
   只在候选目录内裁决（输出不在目录 = 失败），不开放式猜意图
@@ -72,11 +76,48 @@ FastAPI + LangGraph 的**规则优先、模型辅助、LLM 兜底**客服对话�
 ```
 
 **多意图**：并列标记分段 + 每段独立分类抽槽（防串槽），次要意图入任务栈
-主任务结束自动续办。**演进方向已铺好**：决策日志攒真实特征 → Meta-classifier
-（已训练管线+影子模式在线对照）学习"续接/切换/二判/澄清"决策，替代手调阈值。
+主任务结束自动续办。
 
 指针：`app/chat/intent/`、`docs/chat/intent_taxonomy.md`（单一事实来源）、
-stage-04/23/26/27 需求文档、`docs/intent/meta_classifier_training.md`。
+stage-04/23/26 需求文档、`docs/intent/README.md` 第 6 节（KNN/闲聊救援/LTR 路线）。
+
+## 1.5 Meta-classifier：意图决策融合层（阈值的学习化接班人）
+
+**它是什么、不是什么**：Stage 26 把"补槽中来了个 0.72 置信的新意图该不该切"
+这类决策落成了手调阈值；Meta-classifier 是这个决策的**学习化版本**——
+输入是表格证据（对话状态/任务上下文/槽位信号/SetFit topK+margin/KNN 结论,
+共 18 维），输出是 6 类**操作决策**（续接/切换/接受新意图/送二判/澄清/未知）。
+**它不是文本分类器**：消息原文在特征泄漏黑名单里，模型永远看不到——
+"是什么意图"归 SetFit，"对当前任务做什么"归它，两个问题不混。
+
+**训练管线**（scripts/train_meta_classifier.py，依赖组 `uv sync --group train`）：
+LR 基线 / 浅决策树（规则发现工具）/ LightGBM（主力候选）/ XGBoost（对照）
+同拆分同指标对比；评估不看 Accuracy 看**业务代价**（误切吞任务上下文 ×5 >
+误吞新诉求 ×3 > 漏二判 ×2 > 多花 LLM ×1）；泄漏黑名单硬编码断言
+（llm_review_expected 实测是标签改写、message 文本禁用）。首版数据是合成的
+（12501 行，标签由规则生成，LR 即 100%）——**离线冠军不构成上线依据**，
+v1 交付的是管线与特征契约。
+
+**影子模式（当前形态：只观察不决策）**：线上每个语义层轮次，把特征向量 +
+链路实际决策（弱标签）+ **reason_codes**（证据派生原因码：low_margin/
+knn_agrees_top1/differs_from_active_task…，审核免翻 JSON 可 SQL 聚合）落
+决策日志；模型产物在位时附加预测与 agree 标记，`meta_shadow_total` 出分歧率。
+特征采集**不依赖模型产物**——上线第一天就在攒训练数据。
+
+**数据回流闭环**：`export_meta_training_set.py` 从决策日志导出训练契约 CSV
+（session 分桶组安全防近重复泄漏）；**hindsight 信号**定审核优先级——该轮
+之后出现任务否定/转人工、会话低分差评的行最先人工改标（系统事后自证
+决策错误的证据）；改标后 `--data` 直接重训。
+
+**接管路径（阶段 B，未实施，契约已固化）**：真实数据重训 + 分歧率达标后，
+按 stage-27 文档 4.6 的输出契约接管阈值决策（decision/confidence/need_llm/
+need_clarification/evidence/reason_codes）。三条不动摇：RAG 路由（R1-R5
+确定性矩阵）与任务挂起恢复**不进学习层**；确认门/L3 安全约束模型输出
+绕不过（结构保证）；一键回退阈值。
+
+指针：`app/chat/intent/meta_shadow.py`、`scripts/train_meta_classifier.py`、
+`scripts/export_meta_training_set.py`、stage-27 需求文档、
+`docs/intent/meta_classifier_training.md`（操作手册含审核改标教程）。
 
 ## 2. 对话状态机与任务治理
 
@@ -92,7 +133,9 @@ stage-04/23/26/27 需求文档、`docs/intent/meta_classifier_training.md`。
 确认后由 ActionExecutor（唯一写入口）执行：条件 UPDATE 原子拿执行权
 （并发确认恰好执行一次）、三重校验、独立事务 EXECUTING 标记、工单号回执、
 全程 chat_tool_call 审计。含糊应答（「嗯」「好的」）走 LLM 解析 +
-L3 弱确认收紧（要求明说「确认」）。
+L3 弱确认收紧（要求明说「确认」）。端到端幂等：写操作携带
+`idempotency_key = task_id`，对接真实系统的去重契约见 stage-11 文档第 6 节
+（我方至多一次 + 服务端按键去重 + 审计对账）。
 指针：`app/chat/actions/`、`app/chat/confirmation/`、stage-05/13。
 
 ## 4. 工具层：注册表 + MCP，模型无自由选择权
@@ -159,5 +202,14 @@ Prometheus 指标 + Grafana 看板 + 告警规则 + Langfuse 链路明细。
 3. **决策可回放**：不落证据的决策不允许存在——这也是训练数据的来源；
 4. **红线用结构保证而非约定**：确认门在状态机里、白名单 deny-by-default、
    写契约有测试执法、事实类禁缓存禁 RAG；
-5. **零回归推进**：每个 Stage 默认关或语义等价，全量测试（455+）必须绿；
+5. **零回归推进**：每个 Stage 默认关或语义等价，全量测试（469+）必须绿；
 6. **文档先行**：需求文档是实施依据，冲突以文档为准。
+
+## 11. 离生产还有多远（诚实清单）
+
+`docs/ops/production_readiness.md` 按五问审计维护（并发乱序/离线预测线上/
+外部写幂等/复杂度/可回滚）：已具备的有结构性证据（乐观锁/原子执行权/
+迁移全链回滚已演练/宽容读取回归锁），欠着的标了触发时机（多 worker 压测/
+真实系统幂等联调/离线↔线上标定报告），末节是上线前必过红线清单。
+向人讲系统时，这份清单和本文档配套读——一份讲「做了什么」，一份讲
+「还差什么、什么时候补」。
