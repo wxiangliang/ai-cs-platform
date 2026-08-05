@@ -22,11 +22,50 @@ export interface WsEvent {
   category?: string;
 }
 
+/** 坐席端事件（WS /api/handoff/ws）：新工单 / 接管期间用户新消息 */
+export interface AgentWsEvent {
+  type: "ticket_created" | "user_message";
+  ticket_id?: string;
+  session_id?: string;
+  message_id?: string;
+  reason?: string;
+  source_intent?: string;
+  content?: string;
+}
+
 export type WsStatus = "connected" | "closed" | "unavailable";
 
 /** 浏览器 WS 是否可用：仅开发模式（无 API Key）可连 */
 export function canUseWs(): boolean {
   return !useAuthStore().apiKey;
+}
+
+/** 坐席端 WS：开发模式 query 传 admin_token（KB_ADMIN_TOKEN）+ tenant_id */
+export function openHandoffWs(handlers: {
+  onEvent: (event: AgentWsEvent) => void;
+  onStatus: (status: WsStatus) => void;
+}): WebSocket | null {
+  const auth = useAuthStore();
+  if (auth.apiKey || !auth.adminToken) {
+    // 鉴权模式浏览器 WS 不可用（同用户端限制）；开发模式必须配管理令牌
+    handlers.onStatus("unavailable");
+    return null;
+  }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const params = new URLSearchParams({ tenant_id: auth.tenantId, admin_token: auth.adminToken });
+  const ws = new WebSocket(`${proto}://${location.host}/api/handoff/ws?${params.toString()}`);
+  ws.onopen = () => handlers.onStatus("connected");
+  ws.onclose = () => handlers.onStatus("closed");
+  ws.onerror = () => handlers.onStatus("closed");
+  ws.onmessage = (msg) => {
+    try {
+      const data = JSON.parse(msg.data as string) as AgentWsEvent;
+      if (data && data.type) handlers.onEvent(data);
+    } catch {
+      /* 非 JSON 推送忽略 */
+    }
+  };
+  return ws;
 }
 
 export function openSessionWs(

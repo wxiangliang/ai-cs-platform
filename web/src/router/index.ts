@@ -39,8 +39,8 @@ export const menuRoutes: RouteRecordRaw[] = [
       {
         path: "tickets",
         name: "handoff-tickets",
-        component: () => import("@/views/PlaceholderView.vue"),
-        meta: { title: "工单队列", placeholder: "坐席工作台（Stage 15 遗留前端，排队实化）" },
+        component: () => import("@/views/handoff/TicketWorkbench.vue"),
+        meta: { title: "坐席工作台" },
       },
     ],
   },

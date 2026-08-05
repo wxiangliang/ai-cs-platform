@@ -52,6 +52,20 @@ export function sendMessage(sessionId: string, message: string): Promise<ChatRep
   });
 }
 
+export function submitFeedback(
+  sessionId: string,
+  messageId: string,
+  rating: "up" | "down",
+): Promise<unknown> {
+  const auth = useAuthStore();
+  return post(`/api/chat/sessions/${sessionId}/feedback`, {
+    tenant_id: auth.tenantId,
+    user_id: auth.userId,
+    message_id: messageId,
+    rating,
+  });
+}
+
 export function listMessages(
   sessionId: string,
   opts: { limit?: number; before?: string } = {},

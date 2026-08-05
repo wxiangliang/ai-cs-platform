@@ -70,6 +70,21 @@
               <el-tooltip v-if="msg.traceId" :content="`trace: ${msg.traceId}`">
                 <el-tag size="small" type="success">trace</el-tag>
               </el-tooltip>
+              <!-- 反馈（Stage 09 API）：down 评价进回流待审导出 -->
+              <span class="vote">
+                <el-button
+                  size="small"
+                  text
+                  :type="msg.voted === 'up' ? 'primary' : ''"
+                  @click="vote(msg, 'up')"
+                >👍</el-button>
+                <el-button
+                  size="small"
+                  text
+                  :type="msg.voted === 'down' ? 'danger' : ''"
+                  @click="vote(msg, 'down')"
+                >👎</el-button>
+              </span>
             </div>
           </div>
         </div>
@@ -96,7 +111,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { ElMessage } from "element-plus";
 
-import { createSession, listMessages, sendMessage } from "@/api/chat";
+import { createSession, listMessages, sendMessage, submitFeedback } from "@/api/chat";
 import { ApiError } from "@/api/client";
 import { canUseWs, openSessionWs, type WsEvent, type WsStatus } from "@/api/ws";
 
@@ -108,6 +123,7 @@ interface Bubble {
   status?: string | null;
   state?: string | null;
   traceId?: string | null;
+  voted?: "up" | "down";
 }
 
 const sessionId = ref("");
@@ -221,6 +237,16 @@ async function send() {
   } finally {
     sending.value = false;
     await scrollToBottom();
+  }
+}
+
+async function vote(msg: Bubble, rating: "up" | "down") {
+  try {
+    await submitFeedback(sessionId.value, msg.key, rating);
+    msg.voted = rating;
+    ElMessage.success(rating === "up" ? "已点赞" : "已记录，感谢反馈");
+  } catch (err) {
+    toast(err);
   }
 }
 
