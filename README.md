@@ -1,202 +1,98 @@
-# ai-cs-platform
+<div align="center">
 
-> Production-grade multi-tenant **AI customer-service agent** platform.
-> 生产级多租户 **AI 客服 Agent** 平台。
->
-> **FastAPI · LangChain / LangGraph · PostgreSQL · Redis · Milvus**
+# 🛎️ ai-cs-platform
 
-**Languages / 语言:** [English](#english) · [中文](#中文)
+**生产级多租户 AI 客服 Agent 平台**
 
-> ⚠️ The AI layer (LLM / embeddings / MCP tools) **degrades gracefully to rules/templates/mock when unconfigured**, so the whole platform runs end-to-end in dev mode with **zero external API keys**. Real model endpoints are an integration step, not a hard dependency.
-> ⚠️ AI 层（LLM / embedding / MCP 工具）**未配置时自动降级为规则/模板/mock**，所以整套系统在开发模式下**零外部 Key**即可端到端跑通。接真实模型端点是联调项，不是硬依赖。
+以 LangGraph 决策图为核心 —— 每一轮对话确定性、可回放、默认安全
 
----
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-decision%20graph-1C3C3C)](https://langchain-ai.github.io/langgraph/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-async-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-cache%20%2F%20ratelimit-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Milvus](https://img.shields.io/badge/Milvus-vector%20KB-00A1EA)](https://milvus.io/)
+[![Vue](https://img.shields.io/badge/Vue%203-console-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![Tests](https://img.shields.io/badge/tests-550%2B%20passing-brightgreen)](#-质量与工程纪律)
 
-## English
+[English](./README.en.md) · [快速开始](#-快速开始) · [架构](#-架构一图流) · [文档导航](#-文档导航)
 
-### Overview
+</div>
 
-`ai-cs-platform` is a customer-service chatbot backend built around a **LangGraph decision graph** (8 linear nodes + 5 reply branches). Every turn is deterministic, replayable (decision log), multi-tenant, and safe by construction: **the LLM never has direct write authority** — refunds / cancellations / address changes all pass through a confirmation gate and a single idempotent write entry point.
-
-It is developed in **stages (01–19)**; each stage has a requirement doc plus an implementation-record appendix under `docs/requirements/`.
-
-### Highlights
-
-- **Intent understanding** — hybrid classifier: rule control layer → SetFit semantic model (29 classes) → LLM second-opinion on low-confidence hard cases; multi-intent splitting with per-segment slot extraction.
-- **Dialog & tasks** — multi-turn slot filling, dialog state machine, task stack with suspend/resume, task governance (TTL, max-asks → handoff).
-- **Safe writes** — confirmation gate + `ActionExecutor` as the **only** write path (atomic execution claim, replay protection, independent audit transaction).
-- **RAG / FAQ knowledge base** — Milvus hybrid retrieval (vector + jieba keyword RRF) with reranking, parent/child chunking, ambiguity detection, and **refuse-don't-fabricate** guardrails. PostgreSQL is the single source of truth.
-- **Product catalog** — price/stock served from the product table (**never** from RAG — a red line against stale-fact loss).
-- **Human handoff** — ticket lifecycle, context handoff package, agent APIs, silent-repair while handed off, real-time **WebSocket** for both user and agent sides.
-- **Content safety** — injection defense, abuse grading, output leakage guard, prompt-injection wrapping at every LLM concatenation point.
-- **Memory** — short-term window + LLM session summary + long-term facts (`local` or `mem0`).
-- **Auth & multi-tenancy** — API key per tenant, scope separation, sliding-window rate limiting, idempotency keys.
-- **Observability** — Prometheus metrics, Langfuse tracing, quality dashboard (materialized view), data-flywheel export, decision replay.
-- **Cost control (Stage 17)** — semantic cache, per-tenant token budget circuit breaker, model tier routing.
-- **A/B experiments (Stage 18)** — deterministic bucketing, whitelist parameter overrides, split-by-variant comparison SQL.
-- **i18n foundation (Stage 19)** — user-facing copy funneled through `t()`; prompts instruct the model to answer in the user's language.
-
-### Architecture
-
-```
-Request → API route → ChatService → LangGraph
-  load_session_state → preprocess → guardrail_check → intent_classify
-    → slot_extract → confirmation_parse → dialog_state_resolve → skill_resolve
-      → [ response_generate | rag_answer | product_answer | tool_invoke | action_execute ]
-        → save_turn (persist message + decision log)
-```
-
-- Route layer only wires params; business logic lives in services / decision layer.
-- `db_session` is injected via graph config so the state stays serializable.
-- All external I/O (DB / Redis / LLM / Milvus / MCP) has timeouts and **fails open** — degrade, never break the main chain.
-
-### Implemented stages
-
-| Stage | Theme |
-|------:|-------|
-| 01–02 | Foundation framework · chat core tables |
-| 03–04 | Main chat chain · LLM integration (SetFit + factory + polish) |
-| 05–06 | Tool layer & confirmation gate · RAG/FAQ/vector KB (+ parsing, routing, pipeline v2) |
-| 07–08 | Human handoff & tickets · Auth & multi-tenant hardening |
-| 09 | Observability & evaluation (Prometheus / quality views / CI gate / SSE) |
-| 10 | Multi-intent · task governance · memory |
-| 11–12 | MCP tool service · Langfuse tracing |
-| 13–14 | Production hardening · content-safety guardrails |
-| 15–16 | Experience loop (WS / CSAT / lifecycle) · KB operations backend |
-| 17–18 | LLM cost control · A/B experiment framework |
-| 19 | Multilingual foundation (i18n) |
-
-### Quick start
-
-Requires **Python 3.12 + uv**, **PostgreSQL** and **Redis** (mandatory), **Milvus 2.5+** (optional — set `KB_ENABLED=false` to skip).
-
-```bash
-docker compose up -d                  # PG + Redis (add --profile kb for Milvus)
-cp .env.example .env                  # dev mode runs with zero config
-uv sync                               # install deps
-uv run alembic upgrade head           # create tables
-uv run uvicorn app.main:app --reload  # start
-curl http://localhost:8000/api/health
-```
-
-Send a message (dev mode — tenant from body):
-
-```bash
-curl -X POST http://localhost:8000/api/chat/sessions/demo-1/messages \
-  -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"t1","user_id":"u1","message":"我要退款，订单号 SO12345678"}'
-```
-
-Enable the knowledge base (dev pseudo-vectors), then reindex:
-
-```bash
-# in .env: KB_ENABLED=true, EMBEDDING_PROVIDER=hash, FAQ_HIT_THRESHOLD=0.6, RAG_MIN_SCORE=0.2
-uv run python -m app.kb.reindex --tenant t1
-```
-
-### Quality gate
-
-```bash
-uv run ruff check app tests scripts && uv run mypy app && uv run pytest
-```
-
-Current status: **ruff clean · mypy clean · 261 tests passing.** CI: `.github/workflows/ci.yml` (includes intent / multi-intent / RAG eval gates).
-
-### Documentation
-
-| Entry | Content |
-|---|---|
-| `AGENTS.md` / `CLAUDE.md` | Global AI-collaboration rules / stage progress & directory map |
-| `docs/architecture/roadmap.md` | Roadmap (stage status + backlog) |
-| `docs/architecture/system_overview.md` | Layered architecture & LangGraph main chain |
-| `docs/requirements/stage-xx-*/` | Per-stage requirements + implementation appendix |
-| `docs/api/chat_api.md` | API contract (REST / SSE / WebSocket) |
-| `docs/database/chat_tables.md` | Schema design (DDL in `sql/ddl/`, generated — don't hand-edit) |
-| `docs/ops/local_dev_and_runbook.md` | Local dev & runbook |
-
-### Known limitations / open issues
-
-- **Real model calibration** — dev mode uses `EMBEDDING_PROVIDER=hash` (deterministic pseudo-vectors, dev-only, forbidden in prod). Retrieval thresholds, semantic-cache generalization, and token-budget / model-tier splits all need **real embeddings + real-traffic calibration**.
-- **LLM endpoint** — real LLM answer polishing / hard-case second-opinion are only smoke-tested; without an API key everything runs on rules/templates.
-- **No frontend** — agent workbench, KB operations UI, and experiment UI are **API-only** by design; only backend + CLI shipped.
-- **Multilingual is output-side only** — i18n covers user-facing copy and "answer in the user's language". The **input-understanding side** (intent classifier multilingual training set, guardrail lexicon, slot regex) is still Chinese-centric.
-- **A/B significance & scope** — the framework splits data and computes rates + sample size, but **significance conclusions require real traffic**; experiment intent-domain scope is currently record-only (bucketing happens before intent classification).
-- **Ops/deploy items** — Grafana dashboards, cron scheduling (idle-session close, KB schedule, quality-view refresh), agent real-time push at the gateway layer, and a model-bearing CI runner for the SetFit gate are not wired here.
-
-### Tech stack
-
-Python 3.12 (uv-pinned) · SQLAlchemy 2.x async + asyncpg · Alembic · redis.asyncio · Pydantic v2 + pydantic-settings · LangChain / LangGraph · Milvus · Prometheus · Langfuse · FastMCP.
+> ⚡ **零外部 Key 即可端到端跑通。** AI 层（LLM / embedding / MCP 工具）未配置时自动降级为规则 / 模板 / mock——接真实模型端点是联调项，不是硬依赖。
 
 ---
 
-## 中文
+## ✨ 它是什么
 
-### 项目简介
+一个把「AI 客服」当**工程系统**而不是「大模型套壳」来做的后端平台：
 
-`ai-cs-platform` 是一个以 **LangGraph 决策图**（8 线性节点 + 5 回复分支）为核心的 AI 客服后端。每一轮对话都是确定性、可回放（决策日志）、多租户，且从架构上保证安全：**LLM 永远没有直接写权限**——退款 / 取消 / 改地址等写操作一律经过确认门和唯一幂等写入口。
+- 🧠 **LLM 永远没有直接写权限**——退款 / 取消 / 改地址一律经过**确认门**和唯一幂等写入口（`ActionExecutor`）
+- 🔁 **每一轮可回放**——逐轮决策日志（意图证据 / 检索轨迹 / 主动动作 / 延迟），`replay_trace` 一键复盘
+- 🛡️ **默认安全**——注入防护、辱骂分级、输出护栏、价格库存禁走 RAG 等红线全部结构性落地
+- 📉 **默认降级**——DB / Redis / LLM / Milvus / MCP 全部有超时与降级路径，故障不打断主链路
 
-项目按 **Stage 01–19 分阶段推进**，每个阶段在 `docs/requirements/` 下都有需求文档 + 实现记录附录。
+## 🎯 能力总览
 
-### 核心能力
+| | 能力 | 说明 |
+|---|---|---|
+| 🧭 | **三模型三轴决策** | 对话模式门（闲聊/业务/混合/OOS，共享 SetFit body）→ 意图轴（规则控制层 → SetFit 30 类 → KNN 交叉验证 → LLM 难例二判）→ 任务操作轴（Meta-classifier 影子学习续接/切换/澄清） |
+| 💬 | **对话与任务** | 多轮补槽 · 状态机 · 任务栈挂起/恢复 · 多意图切分 · 补槽守护/切换守护/软确认（Stage 26 决策加固） |
+| ✍️ | **安全写操作** | 确认门 + 唯一写入口：原子拿执行权、防重放、幂等键下发、独立事务审计 |
+| 📚 | **RAG / FAQ 知识库** | Milvus 混合检索（向量 + 关键词 RRF）· 重排 · 父子分块 · 歧义检测 · **拒答不编造**；草稿-审核-发布运营流 |
+| 🛒 | **商品能力** | 价格/库存只走商品表（红线）· 选品顾问（硬约束过滤 + 可解释推荐）· 商品对比 |
+| 📣 | **主动服务（NBA）** | 规则版 Next Best Action：活动引导 + 会员注册建议——全局抑制矩阵（投诉/退款/确认门/负面情绪禁营销）· 频控 · 拒绝冷却 · 影子先行 |
+| 🧑‍💼 | **人工接管** | 工单生命周期 · 上下文移交包 · 坐席 API · 双端实时 WebSocket · CSAT 闭环 |
+| 🔐 | **鉴权与多租户** | 每租户 API Key（即时吊销）· scope 分离 · 滑动窗口限流 · Idempotency-Key |
+| 🔍 | **可观测** | Prometheus 指标 + 告警规则 + Grafana 看板 · Langfuse 链路追踪 · 质量看板物化视图 · 数据回流重训闭环 |
+| 💰 | **成本与实验** | 语义缓存 · 租户 token 预算熔断 · 模型分级路由 · A/B 确定性分桶 |
+| 🖥️ | **Web 控制台** | Vue 3 测试控制台：对话调试（决策标签）· 坐席工作台 · 知识库/FAQ/商品运营页 · 观测分析（32 接口全覆盖） |
+| 🚢 | **部署** | Dockerfile + compose 生产编排 · cron 调度器 · MCP 标准工具服务 · i18n 地基 |
 
-- **意图理解** —— 混合分类器：规则控制层 → SetFit 语义模型（29 类）→ 低置信难例 LLM 二判；多意图切分 + 每段独立抽槽。
-- **对话与任务** —— 多轮补槽、对话状态机、任务栈挂起/恢复、任务治理（TTL、追问超限转人工）。
-- **安全写操作** —— 确认门 + `ActionExecutor` 作为**唯一**写入口（原子拿执行权、防重放、独立事务留痕）。
-- **RAG / FAQ 知识库** —— Milvus 混合检索（向量 + jieba 关键词 RRF）+ 重排、父子分块、歧义检测，**拒答不编造**红线；PG 为唯一事实来源。
-- **商品库** —— 价格/库存走商品表（**绝不**走 RAG——防过期资损红线）。
-- **人工接管** —— 工单生命周期、上下文移交包、坐席 API、静默修复、用户端+坐席端**实时 WebSocket**。
-- **内容安全护栏** —— 注入防护、辱骂分级、输出泄漏护栏，全部 LLM 拼接点防注入包裹。
-- **记忆系统** —— 短期窗口 + LLM 会话摘要 + 长期事实（`local` 或 `mem0`）。
-- **鉴权与多租户** —— 每租户 API Key、scope 分离、滑动窗口限流、幂等键。
-- **可观测** —— Prometheus 指标、Langfuse 链路追踪、质量看板（物化视图）、数据回流、决策回放。
-- **成本控制（Stage 17）** —— 语义缓存、租户 token 预算熔断、模型分级路由。
-- **A/B 实验（Stage 18）** —— 确定性分桶、白名单参数覆盖、按变体切分对比 SQL。
-- **多语言地基（Stage 19）** —— 面向用户文案收口 `t()`；提示词让模型用用户语言作答。
+## 🏗 架构一图流
 
-### 分层架构
+```mermaid
+flowchart TB
+    U["👤 用户 / 坐席<br/>REST · SSE · WebSocket"] --> R["API 路由层<br/>鉴权 · 限流 · 幂等 · trace"]
+    R --> S["ChatService"]
+    S --> G
 
+    subgraph G["LangGraph 决策图（每轮确定性执行）"]
+        direction TB
+        A["load_session_state → preprocess → guardrail_check"] --> B["intent_classify<br/>模式门 → 规则层 → SetFit → KNN → LLM 二判"]
+        B --> C["slot_extract → confirmation_parse → dialog_state_resolve<br/>（Meta-classifier 影子）"]
+        C --> D["skill_resolve"]
+        D --> E1["response_generate"] & E2["rag_answer"] & E3["product_answer"] & E4["tool_invoke"] & E5["action_execute<br/>🔒 确认门后的唯一写入口"]
+        E1 & E2 & E3 & E4 & E5 --> F["save_turn<br/>消息 + 决策日志 + 主动服务 NBA"]
+    end
+
+    F --> P[("PostgreSQL<br/>唯一事实来源")]
+    F --> RD[("Redis<br/>限流 · 频控 · 缓存")]
+    E2 -.-> M[("Milvus<br/>向量检索")]
+    E4 & E5 -.-> T["工具层<br/>mock ↔ MCP ↔ 真实系统"]
 ```
-请求 → API 路由 → ChatService → LangGraph
-  load_session_state → preprocess → guardrail_check → intent_classify
-    → slot_extract → confirmation_parse → dialog_state_resolve → skill_resolve
-      → [ response_generate | rag_answer | product_answer | tool_invoke | action_execute ]
-        → save_turn（落消息 + 决策日志）
-```
 
-- 路由层只接参数，业务逻辑在 service / 决策层。
-- `db_session` 经图 config 注入，保证 state 可序列化。
-- 所有外部访问（DB / Redis / LLM / Milvus / MCP）都有超时并**故障放行**——降级而非打断主链路。
+**三条独立决策轴**（互不越界，测试锁定）：
 
-### 已实现阶段
+| 轴 | 回答的问题 | 承担者 |
+|---|---|---|
+| 模式轴 | 这句话是闲聊、业务、混合还是域外？ | Conversation Mode Gate（Stage 30） |
+| 意图轴 | 业务部分具体想做什么？ | 规则层 + SetFit + KNN + LLM 二判 |
+| 策略轴 | 主任务办完后，是否适合主动引导？ | NBA 规则策略（Stage 31/33，影子先行） |
 
-| 阶段 | 主题 |
-|------:|------|
-| 01–02 | 基础框架 · 聊天核心表 |
-| 03–04 | 聊天主链路 · LLM 接入（SetFit + 工厂 + 润色） |
-| 05–06 | 工具层与确认门 · RAG/FAQ/向量库（+ 解析、路由、检索 v2） |
-| 07–08 | 人工接管与工单 · 鉴权多租户加固 |
-| 09 | 可观测与评估（Prometheus / 质量看板 / CI 门禁 / SSE） |
-| 10 | 多意图 · 任务治理 · 记忆 |
-| 11–12 | MCP 工具服务 · Langfuse 链路追踪 |
-| 13–14 | 生产加固 · 内容安全护栏 |
-| 15–16 | 体验闭环（WS / CSAT / 生命周期）· 知识库运营后台 |
-| 17–18 | LLM 成本控制 · A/B 实验框架 |
-| 19 | 多语言地基（i18n） |
+## 🚀 快速开始
 
-### 快速开始
-
-依赖 **Python 3.12 + uv**、**PostgreSQL** 与 **Redis**（必需）、**Milvus 2.5+**（可选——`KB_ENABLED=false` 可关闭）。
+依赖：**Python 3.12 + uv** · **PostgreSQL / Redis**（必需）· **Milvus 2.5+**（可选，`KB_ENABLED=false` 关闭）
 
 ```bash
 docker compose up -d                  # PG + Redis（--profile kb 加 Milvus）
 cp .env.example .env                  # 开发模式零配置可跑
 uv sync                               # 安装依赖
 uv run alembic upgrade head           # 建表
-uv run uvicorn app.main:app --reload  # 启动
-curl http://localhost:8000/api/health
+uv run uvicorn app.main:app --reload  # 启动 → http://localhost:8000
 ```
 
-发一条消息（开发模式，tenant 从请求体取）：
+发一条消息试试（开发模式，tenant 从请求体取）：
 
 ```bash
 curl -X POST http://localhost:8000/api/chat/sessions/demo-1/messages \
@@ -204,48 +100,91 @@ curl -X POST http://localhost:8000/api/chat/sessions/demo-1/messages \
   -d '{"tenant_id":"t1","user_id":"u1","message":"我要退款，订单号 SO12345678"}'
 ```
 
-启用知识库（开发伪向量）后重建索引：
+<details>
+<summary><b>🖥️ 启动 Web 测试控制台（Vue 3）</b></summary>
 
 ```bash
-# .env 中：KB_ENABLED=true，EMBEDDING_PROVIDER=hash，FAQ_HIT_THRESHOLD=0.6，RAG_MIN_SCORE=0.2
+cd web && npm install && npm run dev   # :5173，/api 自动代理到 :8000
+```
+
+对话调试（AI 回复附意图/状态/决策标签）、坐席工作台、知识库/FAQ/商品运营页、
+逐轮决策日志查看，一应俱全。部署见 `docs/ops/web_console_deploy.md`。
+
+</details>
+
+<details>
+<summary><b>📚 启用知识库（开发伪向量）</b></summary>
+
+```bash
+# .env：KB_ENABLED=true  EMBEDDING_PROVIDER=hash  FAQ_HIT_THRESHOLD=0.6  RAG_MIN_SCORE=0.2
 uv run python -m app.kb.reindex --tenant t1
 ```
 
-### 质量门禁
+</details>
+
+## ✅ 质量与工程纪律
 
 ```bash
 uv run ruff check app tests scripts && uv run mypy app && uv run pytest
 ```
 
-当前状态：**ruff 干净 · mypy 干净 · 261 项测试通过。** CI 见 `.github/workflows/ci.yml`（含意图 / 多意图 / RAG 评估门禁）。
+- **ruff 干净 · mypy 干净 · 550+ 项测试通过**（CI：`.github/workflows/ci.yml`，含意图 / 多意图 / RAG 评估门禁）
+- 按 **Stage 分阶段推进**，每个阶段有需求文档 + 实现记录（`docs/requirements/`）
+- 节点写契约执法、工具只读白名单元数据化、模型产物指纹校验等工程护栏内建
+- 生产硬门禁：`APP_ENV=prod` 时鉴权/调试/弱口令缺项**拒绝启动**
 
-### 文档入口
+## 📚 文档导航
 
 | 入口 | 内容 |
 |---|---|
-| `AGENTS.md` / `CLAUDE.md` | AI 协作全局规则 / 阶段进度与目录结构 |
-| `docs/architecture/roadmap.md` | 总体路线图（阶段状态 + backlog） |
-| `docs/architecture/system_overview.md` | 分层架构与 LangGraph 主链路 |
-| `docs/requirements/stage-xx-*/` | 各阶段需求 + 实现记录附录 |
-| `docs/api/chat_api.md` | API 契约（REST / SSE / WebSocket） |
-| `docs/database/chat_tables.md` | 表设计（DDL 见 `sql/ddl/`，生成物勿手改） |
-| `docs/ops/local_dev_and_runbook.md` | 本地开发与运维手册 |
+| [`docs/architecture/implementation_summary.md`](docs/architecture/implementation_summary.md) | **给人看的实现总结**（新人上手首选） |
+| [`docs/architecture/system_overview.md`](docs/architecture/system_overview.md) | 分层架构与 LangGraph 主链路 |
+| [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md) | 路线图（阶段状态 + backlog） |
+| [`docs/chat/intent_taxonomy.md`](docs/chat/intent_taxonomy.md) | 意图体系（单一事实来源） |
+| [`docs/api/chat_api.md`](docs/api/chat_api.md) | API 契约（REST / SSE / WebSocket） |
+| [`docs/ops/`](docs/ops/) | 部署 · 监控 · 运维手册 · 质量 SQL |
+| [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) | 阶段进度全景 / AI 协作规则 |
 
-### 现存问题 / 已知限制
+## 🗺 阶段历程
 
-- **真实模型标定** —— 开发模式用 `EMBEDDING_PROVIDER=hash`（确定性伪向量，仅开发，生产禁用）。检索阈值、语义缓存泛化、token 预算 / 模型分级划分都需要**真实 embedding + 真实流量标定**。
-- **LLM 端点** —— 真实 LLM 润色 / 难例二判仅做过冒烟；无 API Key 时全部走规则/模板。
-- **无前端** —— 坐席工作台、知识库运营界面、实验界面按设计是**纯 API**；只交付后端 + CLI。
-- **多语言仅输出侧** —— i18n 覆盖面向用户文案与「用用户语言作答」。**输入理解侧**（意图分类多语言训练集、护栏词表、槽位正则）仍以中文为主。
-- **A/B 显著性与作用域** —— 框架负责切数据、算比率与样本量，但**显著性结论需真实流量**；实验的意图域作用域目前仅记录（分桶发生在意图分类之前）。
-- **运维/部署项** —— Grafana 看板、cron 定时任务（空闲会话关闭、知识库定时、质量视图刷新）、坐席实时推送（网关层）、SetFit 门禁的带模型 CI runner 未在此接入。
+<details>
+<summary><b>Stage 01–33 全部已实现，点开看分组明细</b></summary>
 
-### 技术栈
+| 阶段 | 主题 |
+|------:|------|
+| 01–04 | 基础框架 · 聊天核心表 · 主链路 · LLM 接入（SetFit 语义分类） |
+| 05–06 | 工具层与确认门 · RAG/FAQ/向量库（解析管道 / 检索路由 / 检索 v2） |
+| 07–09 | 人工接管与工单 · 鉴权多租户 · 可观测与评估平台 |
+| 10–12 | 多意图/任务治理/记忆 · MCP 工具服务 · Langfuse 追踪 |
+| 13–16 | 生产加固 · 内容安全护栏 · 体验闭环（WS/CSAT）· 知识库运营后台 |
+| 17–19 | LLM 成本控制 · A/B 实验框架 · 多语言地基 |
+| 20–23 | 记忆摘要 v2 · 智能澄清 · 只读诊断 agent · 对话方向纠偏 |
+| 24–25 | 部署编排（Docker/cron）· 监控告警（Prometheus/Grafana） |
+| 26–27 | 意图决策加固（补槽/切换守护/margin 路由）· Meta-classifier 影子 |
+| 28–29 | Web 测试控制台（Vue 3）· 控制台全接口覆盖 |
+| 30–33 | 对话模式门 · 主动服务 NBA · 选品顾问/商品对比 · 会员注册引导 |
 
-Python 3.12（uv pin）· SQLAlchemy 2.x async + asyncpg · Alembic · redis.asyncio · Pydantic v2 + pydantic-settings · LangChain / LangGraph · Milvus · Prometheus · Langfuse · FastMCP。
+另有横向工程专项：全链路 Review 加固、节点写契约、生产就绪审计等，详见 `CLAUDE.md`。
+
+</details>
+
+## ⚠️ 已知边界
+
+- **真实模型标定**：开发模式用确定性伪向量（`EMBEDDING_PROVIDER=hash`，生产禁用）；检索阈值、语义缓存、预算分级、Mode Gate/Meta 阈值均需真实 embedding + 真实流量标定
+- **LLM 端点**：润色 / 二判 / 澄清仅冒烟验证，无 Key 时全部走规则/模板（设计如此）
+- **输入侧多语言**：i18n 覆盖输出文案；意图训练集 / 护栏词表 / 槽位正则仍以中文为主
+- **A/B 显著性**：框架切数据、算比率，显著性结论留给真实流量
+
+## 🧰 技术栈
+
+`Python 3.12` · `FastAPI` · `SQLAlchemy 2.x async` · `Alembic` · `redis.asyncio` · `Pydantic v2` · `LangChain / LangGraph` · `SetFit` · `Milvus` · `Prometheus / Grafana` · `Langfuse` · `FastMCP` · `Vue 3 + Vite + Element Plus`
+
+## 📄 License
+
+暂未指定（Not yet specified）。
 
 ---
 
-## License
-
-Not yet specified. / 暂未指定。
+<div align="center">
+<sub>按 Stage 演进的工程化 AI 客服平台 —— 规则先行，模型增强，安全兜底。</sub>
+</div>
