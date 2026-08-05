@@ -14,7 +14,7 @@
 [![Milvus](https://img.shields.io/badge/Milvus-vector%20KB-00A1EA)](https://milvus.io/)
 [![Vue](https://img.shields.io/badge/Vue%203-console-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![CI](https://github.com/wxiangliang/ai-cs-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/wxiangliang/ai-cs-platform/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [English](./README.en.md) · [快速开始](#-快速开始) · [架构](#-架构一图流) · [文档导航](#-文档导航)
 
@@ -182,7 +182,7 @@ uv run ruff check app tests scripts && uv run mypy app && uv run pytest
 
 ## 📄 License
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)
 
 ---
 
