@@ -39,6 +39,12 @@ _WRITE_INTENTS = frozenset(
     }
 )
 
+# 低置信 KNN 救援的意图白名单：仅零副作用的闲聊类（不触碰任务状态、
+# 不触发工具/检索）。业务意图低置信一律走二判/UNKNOWN，永不救援
+_KNN_CHITCHAT_RESCUE_INTENTS = frozenset(
+    {IntentLabel.CHITCHAT_GENERAL, IntentLabel.CHITCHAT_THANKS}
+)
+
 
 class HybridIntentClassifier:
     """规则控制层 + SetFit 语义层 + 规则降级。"""
@@ -105,6 +111,33 @@ class HybridIntentClassifier:
             round(confidence - float(top_k[1]["score"]), 4) if len(top_k) > 1 else 1.0
         )
         if confidence < threshold:
+            # —— 低置信闲聊救援（家常开放域优化，默认随 KNN 开关）——
+            # 家常表达（"今天真热"）SetFit 常给低置信但 top1 就是闲聊类；
+            # 训练集近邻高相似度同意时直接采纳，省一次二判 LLM/一轮尬澄清。
+            # 纪律：只确认 top1 绝不改选；只救零副作用的 CHITCHAT.*——
+            # 业务意图低置信永不走此通道（错回客套话的代价远低于错开任务，
+            # 且闲聊不触碰任务状态，判错用户重说一遍即可纠正）
+            if (
+                settings.INTENT_EXAMPLE_KNN_ENABLED
+                and label in _KNN_CHITCHAT_RESCUE_INTENTS
+            ):
+                from app.chat.intent.example_knn import example_knn_index
+
+                knn = await asyncio.to_thread(example_knn_index.query, normalized)
+                if (
+                    knn is not None
+                    and knn.get("label") == label
+                    and float(knn.get("similarity", 0.0))
+                    >= settings.INTENT_KNN_CHITCHAT_MIN_SIM
+                ):
+                    return IntentResult(
+                        pred_label=label,
+                        confidence=confidence,
+                        decision_source=DecisionSource.SETFIT_KNN_CHITCHAT,
+                        top_k=top_k,
+                        margin=margin,
+                        example_knn=knn,
+                    )
             # —— 第 3 层：LLM 难例二判（成本只花在低置信样本上）——
             second = await self._llm_second_opinion(normalized, top_k)
             if second is not None:

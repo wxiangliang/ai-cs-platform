@@ -263,6 +263,9 @@ class Settings(BaseSettings):
     # 近邻数与确认所需最低平均余弦相似度（待真实 embedding 分布标定）
     INTENT_EXAMPLE_KNN_TOPK: int = 5
     INTENT_EXAMPLE_KNN_MIN_SIM: float = 0.65
+    # 低置信闲聊救援线（家常开放域优化）：top1 是 CHITCHAT.* 且近邻同意、
+    # 相似度过此线 → 免二判采纳。高于 margin 确认线——低置信场景要求更强证据
+    INTENT_KNN_CHITCHAT_MIN_SIM: float = 0.70
     # 索引产物目录（不进 git，锚定仓库根）
     INTENT_EXAMPLE_INDEX_DIR: str = "models/intent_example_index"
 

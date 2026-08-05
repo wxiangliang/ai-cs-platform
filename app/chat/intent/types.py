@@ -57,6 +57,7 @@ class DecisionSource:
     SETFIT_LOW_CONF = "SETFIT_LOW_CONF"  # 模型低置信，兜底 UNKNOWN
     SETFIT_LOW_MARGIN = "SETFIT_LOW_MARGIN"  # 高分但 top1-top2 分差小、二判不可用时采纳（Stage 26，软确认接住）
     SETFIT_KNN_CONFIRMED = "SETFIT_KNN_CONFIRMED"  # margin 小但示例近邻同意 top1，免二判采纳（Stage 26 遗留 3，默认关）
+    SETFIT_KNN_CHITCHAT = "SETFIT_KNN_CHITCHAT"  # 低置信闲聊救援：top1 是闲聊且近邻高相似同意，免二判采纳（零副作用意图专用）
     SETFIT_FALLBACK_RULE = "SETFIT_FALLBACK_RULE"  # 模型不可用，降级规则全表
     # —— LLM 层（Stage 04-01 / 05）——
     LLM = "LLM"  # SetFit 低置信难例的 LLM 二判命中

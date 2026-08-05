@@ -38,6 +38,7 @@ _SHADOW_SOURCES = frozenset(
         DecisionSource.SETFIT_LOW_CONF,
         DecisionSource.SETFIT_LOW_MARGIN,
         DecisionSource.SETFIT_KNN_CONFIRMED,
+        DecisionSource.SETFIT_KNN_CHITCHAT,
         DecisionSource.LLM,
         DecisionSource.RULE_FALLBACK,
     }
@@ -193,6 +194,8 @@ def derive_reason_codes(
         codes.append("llm_second_opinion")
     if source == DecisionSource.SETFIT_KNN_CONFIRMED:
         codes.append("knn_confirmed_skip_llm")
+    if source == DecisionSource.SETFIT_KNN_CHITCHAT:
+        codes.append("knn_chitchat_rescue")
     if features.get("setfit_low_conf"):
         codes.append("low_confidence")
     if features.get("setfit_ambiguous"):
