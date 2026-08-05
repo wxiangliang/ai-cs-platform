@@ -25,3 +25,22 @@ def test_all_trainable_intents_have_skills():
         if skill.skill_id == fallback_id:
             missing.append(label)
     assert not missing, f"以下意图缺少 Skill 注册（会错误地回兜底话术）：{missing}"
+
+
+def test_registry_and_skill_md_two_way_coverage():
+    """注册表 ↔ skills/ md 双向覆盖锁（Stage 33 后统一，例外显式列出）。
+
+    只有 md 没有注册表的例外：上下文控制意图（规则层+状态机处理，
+    不需要独立回复模板）。新增意图必须三步齐：taxonomy → registry → md
+    （skills/README.md 第 2 节）。"""
+    from app.chat.skills.loader import load_skill_declarations
+    from app.chat.skills.registry import _SKILLS
+
+    registry_intents = set(_SKILLS.keys())
+    md_intents = set(load_skill_declarations().keys())
+    assert registry_intents - md_intents == set(), (
+        f"注册表意图缺 skills/ md 声明：{sorted(registry_intents - md_intents)}"
+    )
+    assert md_intents - registry_intents == {"META.SLOT_ONLY", "META.CORRECTION"}, (
+        f"md 例外集合漂移：{sorted(md_intents - registry_intents)}"
+    )

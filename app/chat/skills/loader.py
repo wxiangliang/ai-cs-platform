@@ -41,8 +41,8 @@ _DOMAINS = {
     "PROMOTION", "FAQ", "META", "CHITCHAT",
     "MEMBER",  # Stage 33 第 10 域（会员注册引导）
 }
-# 上下文敏感 META 意图：在 taxonomy 注册但不在 SetFit 目录，loader 单独放行
-_CONTEXT_META = {"META.SLOT_ONLY", "META.CORRECTION"}
+# 上下文敏感 META 意图：在 taxonomy 注册但不在 SetFit/二判目录，loader 单独放行
+_CONTEXT_META = {"META.SLOT_ONLY", "META.CORRECTION", "META.DENY"}
 # 占位符的系统上下文白名单
 _SYSTEM_PLACEHOLDERS = {"user_id", "tenant_id"}
 _PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
@@ -130,6 +130,8 @@ def load_skill_declarations() -> dict[str, dict[str, Any]]:
     declarations: dict[str, dict[str, Any]] = {}
     warnings: list[str] = []
     for path in sorted(SKILLS_DIR.glob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue  # 目录说明文档，不是技能声明
         meta, body = _parse_front_matter(path)
         _validate(path, meta, warnings)
         tools, actions, returns = _to_specs(meta)

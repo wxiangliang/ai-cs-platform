@@ -114,7 +114,7 @@ scripts/               # 训练/密钥/DDL 导出/回流导出/回放/看板刷�
 tests/                 # 按 stage 分目录 + eval 评估门禁（意图/多意图/RAG）
 web/                   # Web 测试控制台（Vue3+Vite4+Element Plus，Stage 28）：登录/多级菜单/对话控制台
 docs/                  # 需求、架构、API、数据库、测试、运维文档（按阶段拆分）
-skills/                # Skill 声明（32 个 md，YAML front-matter；Loader 启动加载——运行时配置，Stage 31 自 docs 迁根目录）
+skills/                # Skill 声明（33 个 md + README 落点对照，YAML front-matter；Loader 启动加载——运行时配置；与注册表双向覆盖测试锁定）
 configs/               # 运行时 JSON 配置（campaigns.example.json 活动池示例等）
 sql/ddl/               # 建表 SQL（scripts/export_table_ddl.py 生成物，勿手改）
 ```
