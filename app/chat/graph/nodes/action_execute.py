@@ -31,7 +31,8 @@ async def action_execute(state: GraphState, config: RunnableConfig) -> dict[str,
 
     try:
         outcome = await action_executor.execute(
-            session, tenant_id=tenant_id, session_id=session_id, task=task
+            session, tenant_id=tenant_id, session_id=session_id, task=task,
+            user_id=state.get("user_id", ""),
         )
     except Exception:  # noqa: BLE001 - 执行器异常降级为受理话术，不打断主链路
         logger.exception("action execute failed: intent=%s", intent)

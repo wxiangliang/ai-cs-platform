@@ -16,11 +16,14 @@ from app.chat.tools.catalog import (
 # ---------------- 目录推导 ----------------
 
 
-def test_derived_whitelist_matches_stage22_set():
-    """零行为变更锁：推导集合 == Stage 22 硬编码时代的白名单。"""
+def test_derived_whitelist_matches_declared_set():
+    """白名单锁：推导集合 == 目录声明的读工具全集（新增读工具必须同步本测试
+    ——目录是单一事实来源，diff 显式化职责扩大正是本机制的设计意图）。
+    基线 = Stage 22 硬编码六工具；2026-08-05 Stage 33 增 query_member_status。"""
     assert set(readonly_tool_descriptions()) == {
         "query_order", "query_logistics_track", "query_refund_policy",
         "query_shipping_policy", "query_product", "query_user_coupons",
+        "query_member_status",
     }
     assert READONLY_TOOLS == readonly_tool_descriptions()
 

@@ -300,12 +300,17 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
 
         proactive = await decide_proactive(state)
         if proactive:
-            if proactive.get("applied") and proactive.get("hook"):
+            action = proactive.get("action")
+            if proactive.get("applied") and action == "MENTION_CAMPAIGN" and proactive.get("hook"):
                 # hook 是运营写死的确定性文案（含披露），不经 LLM 改写（红线）
                 reply += t("proactive.campaign_mention", locale, hook=proactive["hook"])
-                count_proactive(proactive["action"], "applied")
-            elif proactive.get("action") != "NONE":
-                count_proactive(proactive["action"], "shadow")
+                count_proactive(action, "applied")
+            elif proactive.get("applied") and action == "START_ONBOARDING":
+                # Stage 33：引导显式回复「注册」（确定性入口走规则层触发）
+                reply += t("proactive.onboarding_mention", locale)
+                count_proactive(action, "applied")
+            elif action != "NONE":
+                count_proactive(action or "NONE", "shadow")
             else:
                 count_proactive("NONE", "suppressed")
 

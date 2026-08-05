@@ -27,7 +27,11 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 ACTION_CAMPAIGN = "MENTION_CAMPAIGN"
+ACTION_ONBOARDING = "START_ONBOARDING"  # Stage 33：建议未注册用户开通会员
 ACTION_NONE = "NONE"
+
+# onboarding 频控复用 impression 键的伪活动名（客户级建议上限）
+_ONBOARDING_KEY = "onboarding"
 
 # 高风险意图域/意图：营销绝对禁区（需求第 4 节抑制矩阵）
 _HIGH_RISK_DOMAINS = ("AFTERSALE.", "PAYMENT.")
@@ -111,6 +115,27 @@ async def _decide(state: Mapping[str, Any]) -> dict[str, Any]:
         return {"action": ACTION_NONE, "suppressed_by": gate, "reason_codes": [gate]}
 
     intent = _final_intent(state)
+
+    # —— Stage 33 会员注册建议（获客优先于营销，包 stage-33 低风险动作第一批）——
+    # 条件：有稳定 user_id + 会员状态查询确认未注册（失败/不可用一律跳过
+    # 不骚扰=fail-closed）+ 客户级建议上限未满。话术引导显式回复「注册」
+    # （确定性入口走规则层触发，不做弱确认解析）
+    if settings.PROACTIVE_ONBOARDING_ENABLED and state.get("user_id"):
+        user_id = str(state["user_id"])
+        capped = (
+            await _impressions(tenant, user, _ONBOARDING_KEY)
+            >= settings.PROACTIVE_ONBOARDING_MAX
+        )
+        if not capped and await _member_unregistered(tenant, user_id):
+            applied = bool(settings.PROACTIVE_APPLY)
+            if applied:
+                await _record_impression(tenant, session_id, user, _ONBOARDING_KEY)
+            return {
+                "action": ACTION_ONBOARDING,
+                "applied": applied,
+                "reason_codes": ["unregistered_user", f"intent:{intent}"],
+            }
+
     campaign = select_campaign(intent)
     if campaign is None:
         return {"action": ACTION_NONE, "suppressed_by": "no_campaign", "reason_codes": ["no_campaign"]}
@@ -138,6 +163,23 @@ async def _decide(state: Mapping[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Redis 频控/冷却（全部 fail-closed：异常按「不允许展示」处理）
 # ---------------------------------------------------------------------------
+
+
+async def _member_unregistered(tenant: str, user_id: str) -> bool:
+    """经工具层查会员状态（provider 抽象：mock/MCP/真实系统同口径）。
+
+    只有明确返回「未注册」才建议；查询失败/服务不可达/字段缺失一律 False
+    （fail-closed：不确定就不骚扰）。
+    """
+    try:
+        from app.chat.tools.factory import get_tool_provider
+
+        result = await get_tool_provider().invoke(
+            "query_member_status", {"user_id": user_id}, tenant_id=tenant
+        )
+        return bool(result.ok and result.data.get("registered") is False)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 async def _check_rejection(tenant: str, session_id: str, user: str, text: str) -> str | None:

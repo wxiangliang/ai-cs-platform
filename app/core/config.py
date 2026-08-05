@@ -298,6 +298,10 @@ class Settings(BaseSettings):
     # 会话内主动动作上限 / 拒绝后冷却小时数（频控全走 Redis，故障 fail-closed 抑制）
     PROACTIVE_SESSION_MAX: int = 1
     PROACTIVE_REJECT_COOLDOWN_HOURS: int = 48
+    # Stage 33 会员注册建议（受总开关双关管控；未注册用户业务办完后建议开通，
+    # 话术引导显式回复「注册」）；客户级建议上限
+    PROACTIVE_ONBOARDING_ENABLED: bool = True
+    PROACTIVE_ONBOARDING_MAX: int = 2
 
     # ----- Stage 27 Meta-classifier 影子模式 -----
     # 影子模式：模型对每轮语义层决策做预测、落决策日志、出分歧率指标，

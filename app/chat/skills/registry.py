@@ -161,6 +161,20 @@ _SKILLS: dict[str, Skill] = {
             "confirmed": "已受理您对订单「{order_id}」的取消申请，我们核实订单状态后会尽快为您处理并反馈结果。",
         },
     ),
+    # —— 会员注册（Stage 33：写操作，进确认门；规则层触发 + NBA 主动建议入口）——
+    IntentLabel.MEMBER_REGISTER: Skill(
+        skill_id="member_register",
+        name="会员注册",
+        domain="MEMBER",
+        intent=IntentLabel.MEMBER_REGISTER,
+        kind=SkillKind.WRITE,
+        required_slots=["phone"],
+        templates={
+            "collect": "好的，我来帮您开通会员！请提供用于注册的手机号。",
+            "confirm": "将以手机号「{phone}」为您注册本平台会员，确认提交吗？（回复“确认”继续，回复“不用”放弃）",
+            "confirmed": "已为您提交会员注册，开通结果以短信通知为准～",
+        },
+    ),
     # —— 售后（写操作，进确认门，不直接执行）——
     IntentLabel.AFTERSALE_REFUND: Skill(
         skill_id="aftersale_refund",

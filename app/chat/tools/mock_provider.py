@@ -53,6 +53,8 @@ class MockToolProvider:
             return {"policy": "签收后 7 天内商品完好可申请无理由退货；质量问题运费由商家承担。"}
         if tool_id in ("query_user_coupons", "query_coupon_policy"):
             return {"coupons": [{"name": "满 1000 减 50", "expire": "2026-07-31"}]}
+        if tool_id == "query_member_status":
+            return mock_data.member_status_data(tenant_id, str(params.get("user_id") or ""))
 
         # —— 写操作（只允许 ActionExecutor 调用）——
         if tool_id in (
@@ -61,6 +63,13 @@ class MockToolProvider:
             "cancel_order", "update_order_address",
         ):
             return mock_data.ticket_data(tenant_id, tool_id, order_id)
+        if tool_id == "register_member":
+            # 会员注册（Stage 33）：user_id 缺省用手机号兜底（mock 幂等按键）
+            return mock_data.register_member_data(
+                tenant_id,
+                str(params.get("user_id") or params.get("phone") or ""),
+                str(params.get("phone") or ""),
+            )
 
         raise KeyError(tool_id)
 

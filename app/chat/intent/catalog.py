@@ -12,6 +12,7 @@ INTENT_DESCRIPTIONS: dict[str, str] = {
     "PRODUCT.ASK_STOCK": "商品库存/有无现货",
     "PRODUCT.COMPARE": "多个商品对比",
     "PRODUCT.RECOMMEND": "商品推荐/选购建议",
+    "MEMBER.REGISTER": "注册/开通本平台会员（新手引导；第三方平台账号注册不算）",
     "ORDER.QUERY_STATUS": "订单状态查询（是否付款/是否发货）",
     "ORDER.CREATE": "想购买/下单意向",
     "ORDER.CANCEL": "取消还没发货的订单",

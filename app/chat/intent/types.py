@@ -28,6 +28,8 @@ class IntentLabel:
     AFTERSALE_RETURN = "AFTERSALE.RETURN"
     AFTERSALE_EXCHANGE = "AFTERSALE.EXCHANGE"
     AFTERSALE_COMPLAIN = "AFTERSALE.COMPLAIN"
+    # 会员（Stage 33：规则层触发 + LLM 二判目录，语义层暂无训练样本）
+    MEMBER_REGISTER = "MEMBER.REGISTER"
     # 元意图（控制类，优先级高）。命名以 docs/chat/intent_taxonomy.md 为准，
     # 旧名 META.HANDOFF_REQUEST 已废弃（taxonomy 2.1 别名对照表）。
     META_TRANSFER_HUMAN = "META.TRANSFER_HUMAN"

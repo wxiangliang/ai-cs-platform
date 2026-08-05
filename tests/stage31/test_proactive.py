@@ -174,6 +174,9 @@ async def _enable(monkeypatch, tmp_path, apply=True):
     monkeypatch.setattr(settings, "CAMPAIGN_CONFIG_PATH", str(cfg))
     monkeypatch.setattr(settings, "PROACTIVE_ENABLED", True)
     monkeypatch.setattr(settings, "PROACTIVE_APPLY", apply)
+    # 本文件聚焦活动路径；会员注册建议（Stage 33，优先于活动）单独在
+    # tests/stage33 覆盖，这里关掉避免抢占
+    monkeypatch.setattr(settings, "PROACTIVE_ONBOARDING_ENABLED", False)
 
 
 async def test_offer_then_session_cap(redis_env, monkeypatch, tmp_path):

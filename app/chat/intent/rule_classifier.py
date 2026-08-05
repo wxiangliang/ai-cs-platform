@@ -29,6 +29,15 @@ _CANCEL_ORDER_RE = re.compile(
     r"((?<![被已])取消.{0,4}(订单|这单|那单|单子))|((订单|这单|那单)[^被已]{0,4}取消)|(退订)"
 )
 
+# 会员注册（Stage 33，确定性触发——语义层无训练样本，规则层是主入口）：
+# 「注册/开通 + 会员」任意近邻顺序，或裸短句「注册」（NBA 建议话术引导
+# 用户显式回复「注册」）。两条防误伤（否定/第三方平台）见 _match_member_register
+_MEMBER_REGISTER_RE = re.compile(
+    r"(?:注册|开通)\s*.{0,4}?会员|会员\s*.{0,4}?(?:注册|开通)|^(?:我要|帮我|想)?注册$"
+)
+_MEMBER_NEGATION_RE = re.compile(r"不想|不要|不用|别|先不|暂不|取消")
+_THIRD_PARTY_RE = re.compile(r"抖音|微信|淘宝|京东|支付宝|微博|小红书|快手|app|账号|网站|平台")
+
 # META 控制类关键词（控制层专用，最高优先级）。
 # 顺序即优先级：身份询问必须先于转人工——「你是真人吗」问的是身份，
 # 若先判转人工会被「真人」子串误吞成建单。
@@ -191,6 +200,20 @@ class RuleIntentClassifier:
                 pred_label=IntentLabel.META_DENY,
                 confidence=_CONFIRM_GATE_CONFIDENCE,
                 decision_source=DecisionSource.RULE_TASK_DENY,
+            )
+
+        # —— 会员注册（Stage 33）：置于确认门/任务否定之后（CONFIRMING 下
+        # 「确认/不用」优先），否定语境（「不想开通会员」）与第三方平台语境
+        # （「怎么注册抖音账号」是 OOS 不是本平台会员）都不触发 ——
+        if (
+            _MEMBER_REGISTER_RE.search(normalized)
+            and not _MEMBER_NEGATION_RE.search(normalized)
+            and not _THIRD_PARTY_RE.search(lowered)
+        ):
+            return IntentResult(
+                pred_label=IntentLabel.MEMBER_REGISTER,
+                confidence=_KEYWORD_CONFIDENCE,
+                decision_source=DecisionSource.RULE_KEYWORD,
             )
 
         # —— META 控制类关键词（身份询问先于转人工，见词表处注释）——

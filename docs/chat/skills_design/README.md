@@ -9,7 +9,7 @@
 
 ---
 
-## 完整 Skill 清单（31 个文件）
+## 完整 Skill 清单（32 个文件，2026-08-05 增 MEMBER.REGISTER——Stage 33 会员注册引导）
 
 > 历史版本此处曾写「27 个」但实际文件数不符；v2 起清单与目录文件严格一一对应：
 > 31 = PRODUCT 5 + ORDER 4 + LOGISTICS 3 + AFTERSALE 5 + PAYMENT 3 + PROMOTION 2 + FAQ 1 + META 6 + CHITCHAT 2。

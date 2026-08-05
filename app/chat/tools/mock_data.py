@@ -46,6 +46,30 @@ def logistics_data(tenant_id: str, order_id: str) -> dict[str, Any]:
     }
 
 
+# —— Stage 33 会员 mock：进程内注册状态（tenant:user → member_no）。
+# 闭环用途：register_member 写入后 query_member_status 即已注册，
+# NBA 不再重复建议；真实会员系统对接后本表仅测试使用
+MEMBERS: dict[str, str] = {}
+
+
+def _member_key(tenant_id: str, user_id: str) -> str:
+    return f"{tenant_id}:{user_id}"
+
+
+def member_status_data(tenant_id: str, user_id: str) -> dict[str, Any]:
+    """会员状态查询假数据。"""
+    member_no = MEMBERS.get(_member_key(tenant_id, user_id))
+    return {"user_id": user_id, "registered": member_no is not None, "member_no": member_no}
+
+
+def register_member_data(tenant_id: str, user_id: str, phone: str) -> dict[str, Any]:
+    """注册会员假数据：确定性会员号，写入进程内状态表（幂等：同键同号）。"""
+    key = _member_key(tenant_id, user_id)
+    member_no = MEMBERS.get(key) or f"MB{_digest(tenant_id, 'member', user_id, phone)[:10].upper()}"
+    MEMBERS[key] = member_no
+    return {"ticket_no": member_no, "member_no": member_no, "phone": phone}
+
+
 def ticket_data(tenant_id: str, tool_id: str, order_id: str) -> dict[str, Any]:
     """写操作工单假数据。"""
     seed = _digest(tenant_id, tool_id, order_id)

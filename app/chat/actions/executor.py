@@ -54,6 +54,7 @@ class ActionExecutor:
         tenant_id: str,
         session_id: str,
         task: dict[str, Any],
+        user_id: str = "",
     ) -> ExecutionOutcome:
         """执行一个确认通过的任务（finished_task）。校验失败返回错误码，不抛异常。"""
         intent = task.get("intent", "")
@@ -119,7 +120,10 @@ class ActionExecutor:
         # 端到端幂等契约（生产就绪审计 2026-08-05）：task_id 作为幂等键随写操作
         # 下发——外部系统按此键去重，「我方超时但对方已提交」的重试不产生重复
         # 业务动作（对接契约见 stage-11 文档第 6 节；mock 端天然确定性）
+        # user_id 与幂等键同为系统上下文（会员类写操作按用户记账；无关工具忽略）
         params = {**slots, "idempotency_key": task_id}
+        if user_id:
+            params["user_id"] = user_id
         result: ToolResult = await provider.invoke(action.action_id, params, tenant_id=tenant_id)
 
         # —— 审计落库（主事务）——

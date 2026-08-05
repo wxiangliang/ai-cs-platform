@@ -35,6 +35,7 @@ TOOL_CATALOG: dict[str, ToolMeta] = {
     "query_shipping_policy": ToolMeta("查询运费/配送政策（无参数）", readonly=True),
     "query_product": ToolMeta("查询商品价格/库存（参数 product_name）", readonly=True),
     "query_user_coupons": ToolMeta("查询用户可用优惠券（无参数）", readonly=True),
+    "query_member_status": ToolMeta("查询用户是否已注册会员（参数 user_id）", readonly=True),
     # —— 写操作（唯一入口 ActionExecutor，永不进任何模型可选白名单）——
     "create_refund_ticket": ToolMeta("提交退款工单", readonly=False),
     "create_return_ticket": ToolMeta("提交退货工单", readonly=False),
@@ -44,6 +45,7 @@ TOOL_CATALOG: dict[str, ToolMeta] = {
     "create_invoice": ToolMeta("提交开票申请", readonly=False),
     "cancel_order": ToolMeta("取消订单", readonly=False),
     "update_order_address": ToolMeta("修改订单收货地址", readonly=False),
+    "register_member": ToolMeta("注册会员（Stage 33）", readonly=False),
 }
 
 # mock 派发接受的同义 id → 规范名（不进白名单，仅存在性说明）
