@@ -124,6 +124,8 @@ async def _decide(state: Mapping[str, Any]) -> dict[str, Any]:
     decision = {
         "action": ACTION_CAMPAIGN,
         "campaign_id": campaign["campaign_id"],
+        # 展示可追溯到活动版本（包 stage-34 验收）：运营改配置需递增 version
+        "campaign_version": campaign.get("version"),
         "hook": str(campaign.get("hook") or ""),
         "applied": applied,
         "reason_codes": ["eligible", f"intent:{intent}"],

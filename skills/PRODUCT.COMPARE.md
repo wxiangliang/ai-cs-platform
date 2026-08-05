@@ -13,18 +13,18 @@ triggers:
 required_tools:
   - tool_id: query_product_info
     purpose: 查询每款商品的详情用于对比
-    required_slots: [product_ids]
+    required_slots: [compare_items]
     optional: false
-    call_mode: batch              # 对每个 product_id 各调用一次，结果合并
+    call_mode: batch              # 对每款各查一次商品库，结果合并
 
+# Stage 32 实做：product_ids 改 compare_items（「A和B」整段捕获后节点内
+# 切分——用户不知道商品 ID）；运行时槽位/模板以代码注册表（registry.py）为准
 slots:
-  - name: product_ids
-    description: 要对比的商品名称或编号列表（至少两个）
-    ask_prompt: "您想对比哪几款商品？"
+  - name: compare_items
+    description: 要对比的两款商品名称（「A和B」「A vs B」，抽取规范为「A|B」）
+    ask_prompt: "您想对比哪两款商品？例如「凉风X1 和 凉风X2」"
     required: true
-    type: list
-    min_count: 2
-    inherit_from_context: true    # 从 recent_products 继承已提到的商品
+    type: string
 
 actions: []
 

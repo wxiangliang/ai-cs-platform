@@ -66,6 +66,37 @@ class ProductRepository(BaseRepository[ProductItem]):
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:limit]
 
+    async def search_by_constraints(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        *,
+        category_keyword: str,
+        budget_max_cents: int | None = None,
+        limit: int = 4,
+    ) -> list[ProductItem]:
+        """选品硬约束过滤（Stage 32 红线：不满足硬约束的商品不进候选）。
+
+        SQL 层保证：上架 + 有货 + 品类/名称匹配 + 预算内（给了预算时无价格
+        的商品也排除——无法证明满足硬约束就不展示），价格升序（无商业权重）。
+        """
+        stmt = select(ProductItem).where(
+            ProductItem.tenant_id == tenant_id,
+            ProductItem.status == "active",
+            ProductItem.stock > 0,
+            or_(
+                ProductItem.category.ilike(f"%{category_keyword}%"),
+                ProductItem.name.ilike(f"%{category_keyword}%"),
+            ),
+        )
+        if budget_max_cents is not None:
+            stmt = stmt.where(
+                ProductItem.price_cents.is_not(None),
+                ProductItem.price_cents <= budget_max_cents,
+            )
+        stmt = stmt.order_by(ProductItem.price_cents.asc().nulls_last()).limit(limit)
+        return await self._all(session, stmt)
+
     async def get_by_code(
         self, session: AsyncSession, tenant_id: str, product_code: str
     ) -> ProductItem | None:

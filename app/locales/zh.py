@@ -49,4 +49,8 @@ TABLE: dict[str, str] = {
     # —— 商品库（Stage 06-03）——
     "product.multi": "为您找到多款相关商品：{names}。请问您想咨询哪一款？",
     "product.not_found": "抱歉，没有找到与「{query}」匹配的商品，请确认商品名称，或发我商品链接。",
+    # —— Stage 32 选品顾问 ——
+    "product.advise_none": "很抱歉，预算 {budget} 元内暂时没有符合「{category}」的有货商品。您可以适当调整预算或换个品类，我再帮您找找。",
+    "product.advise_unavailable": "抱歉，商品服务暂时不可用，稍后再试或告诉我具体商品名称，我用其他方式帮您查。",
+    "product.compare_missing": "抱歉，{names}没有在商品库中找到，请确认准确的商品名称后再发给我，我来对比。",
 }

@@ -48,6 +48,17 @@ class ProductProvider(Protocol):
         """按商品名称线索检索。"""
         ...
 
+    async def advise(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        category: str,
+        budget_max_cents: int | None,
+        limit: int = 4,
+    ) -> list[ProductInfo]:
+        """选品硬约束候选（Stage 32）：品类+预算过滤后价格升序。"""
+        ...
+
 
 def _keywords(query: str, max_terms: int = 6) -> list[str]:
     """jieba 分词提取检索词（≥2 字符或含字母数字）。"""
@@ -108,6 +119,31 @@ class LocalProductProvider:
                 description=item.description,
             )
             for item, _score in scored
+        ]
+
+    async def advise(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        category: str,
+        budget_max_cents: int | None,
+        limit: int = 4,
+    ) -> list[ProductInfo]:
+        """选品候选：硬约束过滤在 SQL 层（repository），此处只做结构转换。"""
+        items = await product_repository.search_by_constraints(
+            session,
+            tenant_id,
+            category_keyword=category,
+            budget_max_cents=budget_max_cents,
+            limit=limit,
+        )
+        return [
+            ProductInfo(
+                id=item.id, name=item.name, price_cents=item.price_cents,
+                stock=item.stock, category=item.category,
+                attrs=item.attrs_json or {}, description=item.description,
+            )
+            for item in items
         ]
 
 

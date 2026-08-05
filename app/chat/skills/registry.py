@@ -48,15 +48,17 @@ _SKILLS: dict[str, Skill] = {
         },
     ),
     # —— 商品扩展（读操作，SetFit 语义层可达）——
+    # Stage 32 实做：空壳升级为真实选品/对比（槽位收集 + 商品库硬约束查询）
     "PRODUCT.COMPARE": Skill(
         skill_id="product_compare",
         name="商品对比",
         domain="PRODUCT",
         intent="PRODUCT.COMPARE",
         kind=SkillKind.READ,
-        required_slots=[],
+        required_slots=["compare_items"],
         templates={
-            "answer": "好的，请告诉我您想对比的两款商品名称，我帮您整理对比后回复。",
+            "collect": "好的，请告诉我您想对比的两款商品名称，例如「凉风X1 和 凉风X2」。",
+            "answer": "好的，我来为您对比这两款商品。",
         },
     ),
     "PRODUCT.RECOMMEND": Skill(
@@ -65,9 +67,10 @@ _SKILLS: dict[str, Skill] = {
         domain="PRODUCT",
         intent="PRODUCT.RECOMMEND",
         kind=SkillKind.READ,
-        required_slots=[],
+        required_slots=["category", "budget"],
         templates={
-            "answer": "好的，方便说下您的预算和使用场景吗？我来帮您推荐合适的商品。",
+            "collect": "好的，我来帮您挑！请告诉我想看的品类和大概预算，例如「风扇，预算300以内」（已说过的不用重复）。",
+            "answer": "好的，我按您的需求为您筛选商品。",
         },
     ),
     # —— 订单 / 物流（读操作）——

@@ -1,6 +1,7 @@
 [
   {
     "campaign_id": "summer_2026_ac",
+    "version": 1,
     "enabled": true,
     "valid_from": "2026-08-01T00:00:00+08:00",
     "valid_to": "2026-08-31T23:59:59+08:00",

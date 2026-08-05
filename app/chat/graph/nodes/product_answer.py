@@ -36,6 +36,135 @@ PRODUCT_FACT_INTENTS = frozenset(
     }
 )
 
+# Stage 32 选品顾问/对比（槽位齐全即 DONE 后进入本节点）
+ADVISOR_INTENTS = frozenset(
+    {IntentLabel.PRODUCT_RECOMMEND, IntentLabel.PRODUCT_COMPARE}
+)
+
+
+def _parse_budget_yuan(value: Any) -> int | None:
+    """槽位里的预算转整数元；无法解析视为未给预算（不做硬约束）。"""
+    try:
+        return int(float(value)) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _brief(p: ProductInfo) -> str:
+    """单商品一行摘要（只引用结构化字段，无生成）。"""
+    parts = [f"「{p.name}」{p.price_text}，{p.stock_text}"]
+    if p.description:
+        parts.append(p.description[:40].rstrip("。"))
+    return "；".join(parts)
+
+
+async def _recommend(
+    session: Any, tenant_id: str, state: GraphState, slots: dict[str, Any]
+) -> dict[str, Any]:
+    """选品顾问（Stage 32）：硬约束过滤 + 价格升序 + trade-off，宁缺勿编。"""
+    locale = state.get("locale")
+    category = str(slots.get("category") or "")
+    budget_yuan = _parse_budget_yuan(slots.get("budget"))
+    budget_cents = budget_yuan * 100 if budget_yuan else None
+    retrieval: dict[str, Any] = {
+        "advisor": {"category": category, "budget_yuan": budget_yuan}
+    }
+    try:
+        products = await product_provider.advise(
+            session, tenant_id, category, budget_cents, limit=4
+        )
+    except Exception:  # noqa: BLE001 - 商品库故障如实说明，不伪造候选（红线）
+        logger.exception("product advise failed")
+        retrieval["degraded"] = True
+        return {
+            "reply": t("product.advise_unavailable", locale),
+            "answer_source": "product_db",
+            "retrieval": retrieval,
+            "graph_trace": ["product_answer:recommend"],
+        }
+    retrieval["advisor"]["hits"] = [{"id": p.id, "name": p.name} for p in products]
+
+    if not products:
+        return {
+            "reply": t(
+                "product.advise_none", locale,
+                category=category, budget=budget_yuan or "-",
+            ),
+            "answer_source": "product_db",
+            "retrieval": retrieval,
+            "graph_trace": ["product_answer:recommend"],
+        }
+
+    budget_part = f"预算 {budget_yuan} 元内、" if budget_yuan else ""
+    lines = [f"根据您的需求（{budget_part}品类「{category}」），为您找到 {len(products)} 款有货商品："]
+    lines += [f"{i}. {_brief(p)}" for i, p in enumerate(products, 1)]
+    # trade-off（包 stage-32 要求）：候选≥2 给两端提示，只引用价格事实
+    if len(products) >= 2 and products[0].price_cents is not None:
+        lines.append(
+            f"其中「{products[0].name}」价格最低；「{products[-1].name}」价格稍高，"
+            "可按需权衡。"
+        )
+        lines.append(
+            f"需要详细对比的话，直接说「对比 {products[0].name} 和 {products[-1].name}」即可。"
+        )
+    return {
+        "reply": "\n".join(lines),
+        "answer_source": "product_db",
+        "retrieval": retrieval,
+        "graph_trace": ["product_answer:recommend"],
+    }
+
+
+async def _compare(
+    session: Any, tenant_id: str, state: GraphState, slots: dict[str, Any]
+) -> dict[str, Any]:
+    """商品对比（Stage 32）：两款逐个查库，结构化并列；找不齐如实说明。"""
+    locale = state.get("locale")
+    raw = str(slots.get("compare_items") or "")
+    names = [n.strip() for n in raw.split("|") if n.strip()][:2]
+    retrieval: dict[str, Any] = {"compare": {"items": names, "hits": []}}
+    found: list[ProductInfo] = []
+    missing: list[str] = []
+    for name in names:
+        try:
+            hits = await product_provider.search(session, tenant_id, name, limit=1)
+        except Exception:  # noqa: BLE001 - 故障如实说明
+            logger.exception("product compare search failed")
+            hits = []
+            retrieval["degraded"] = True
+        if hits:
+            found.append(hits[0])
+        else:
+            missing.append(name)
+    retrieval["compare"]["hits"] = [{"id": p.id, "name": p.name} for p in found]
+
+    if len(names) < 2 or missing:
+        return {
+            "reply": t(
+                "product.compare_missing", locale,
+                names="、".join(f"「{n}」" for n in (missing or names)) or "商品",
+            ),
+            "answer_source": "product_db",
+            "retrieval": retrieval,
+            "graph_trace": ["product_answer:compare"],
+        }
+
+    lines = ["为您对比两款商品（信息来自商品库，以商品页为准）："]
+    for p in found:
+        row = [f"·「{p.name}」{p.price_text}，{p.stock_text}"]
+        if p.attrs:
+            attrs_text = "、".join(f"{k}:{v}" for k, v in list(p.attrs.items())[:4])
+            row.append(f"规格：{attrs_text}")
+        if p.description:
+            row.append(p.description[:40].rstrip("。"))
+        lines.append("；".join(row))
+    return {
+        "reply": "\n".join(lines),
+        "answer_source": "product_db",
+        "retrieval": retrieval,
+        "graph_trace": ["product_answer:compare"],
+    }
+
 
 def _format_fact_reply(intent: str, p: ProductInfo) -> str:
     """用商品库字段组装事实回复（价格/库存来源唯一，不经生成）。"""
@@ -63,6 +192,13 @@ async def product_answer(state: GraphState, config: RunnableConfig) -> dict[str,
     intent_dict = state.get("intent_result") or {}
     intent = intent_dict.get("final_intent") or intent_dict.get("pred_label", "")
     slots = state.get("effective_slots") or state.get("slots") or {}
+
+    # —— Stage 32 选品顾问/对比分支 ——
+    if intent == IntentLabel.PRODUCT_RECOMMEND:
+        return await _recommend(session, tenant_id, state, slots)
+    if intent == IntentLabel.PRODUCT_COMPARE:
+        return await _compare(session, tenant_id, state, slots)
+
     product_query = str(slots.get("product_name") or slots.get("product_id") or "")
 
     retrieval: dict[str, Any] = {"query": product_query, "product_hits": []}

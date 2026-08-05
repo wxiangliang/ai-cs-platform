@@ -17,17 +17,23 @@ required_tools:
     optional: true
     filter_by_slots: [budget, use_scene, preference]  # 有槽位时过滤
 
+# Stage 32 实做：category/budget 为必填硬约束（对候选集影响最大的两项，
+# collect 模板一次问齐）；运行时槽位/模板以代码注册表（registry.py）为准
 slots:
+  - name: category
+    description: 商品品类（硬约束：品类词表抽取，未命中追问）
+    ask_prompt: "您想看哪类商品呢？"
+    required: true
   - name: budget
-    description: 用户预算
+    description: 用户预算（硬约束：预算内且有货才进候选，归一化为元）
     ask_prompt: "您大概的预算范围是多少？"
-    required: false               # 渐进式收集，不强制一次问完
+    required: true
   - name: use_scene
-    description: 使用场景（送礼/自用/办公/运动等）
+    description: 使用场景（送礼/自用/办公/运动等；v1 收集不参与排序）
     ask_prompt: "请问是自用还是送礼？有什么特别的场合或需求吗？"
     required: false
   - name: preference
-    description: 用户偏好（风格/颜色/品牌等）
+    description: 用户偏好（风格/颜色/品牌等；v1 收集不参与排序）
     ask_prompt: "您对风格或颜色有什么偏好吗？"
     required: false
 

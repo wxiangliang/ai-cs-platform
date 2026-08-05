@@ -48,6 +48,19 @@ class SlotExtractor:
         if product_name:
             slots["product_name"] = product_name
 
+        # —— Stage 32 选品顾问槽位 ——
+        budget = self._extract_budget(text)
+        if budget is not None:
+            slots["budget"] = budget
+
+        category = self._first_group(patterns.CATEGORY_RE, text)
+        if category:
+            slots["category"] = category
+
+        compare_items = self._extract_compare_items(text)
+        if compare_items:
+            slots["compare_items"] = compare_items
+
         return slots
 
     def _extract_product_name(self, text: str) -> str | None:
@@ -90,6 +103,39 @@ class SlotExtractor:
         text_without_phone = patterns.PHONE_RE.sub(" ", text)
         bare = patterns.ORDER_ID_BARE_RE.search(text_without_phone)
         return bare.group(1) if bare else None
+
+    def _extract_budget(self, text: str) -> int | None:
+        """抽取预算（归一化为元的整数）：「预算3000」「2千以内」「不超过3000元」。
+
+        手机号/订单号先剔除，防止长数字串被误当预算。
+        """
+        cleaned = patterns.PHONE_RE.sub(" ", text)
+        cleaned = patterns.ORDER_ID_WITH_PREFIX_RE.sub(" ", cleaned)
+        m = (
+            patterns.BUDGET_WITH_PREFIX_RE.search(cleaned)
+            or patterns.BUDGET_LIMIT_RE.search(cleaned)
+            or patterns.BUDGET_WITH_SUFFIX_RE.search(cleaned)
+        )
+        if not m:
+            return None
+        try:
+            value = float(m.group(1)) * patterns._BUDGET_UNITS.get(m.group(2) or "", 1)
+        except ValueError:
+            return None
+        # 预算合理域校验（1 元~100 万）：排除年份/单号残段误抽
+        return int(value) if 1 <= value <= 1_000_000 else None
+
+    def _extract_compare_items(self, text: str) -> str | None:
+        """抽取对比两项，剥噪声后规范为「A|B」；任一侧过短放弃。"""
+        m = patterns.COMPARE_ITEMS_RE.search(text)
+        if not m:
+            return None
+        left = patterns.COMPARE_PREFIX_NOISE_RE.sub("", m.group(1).strip()).strip()
+        right = patterns.COMPARE_SUFFIX_NOISE_RE.sub("", m.group(2).strip()).strip()
+        right = right.strip(patterns.PRODUCT_SUFFIX_NOISE)
+        if len(left) < 2 or len(right) < 2:
+            return None
+        return f"{left}|{right}"
 
     def _extract_quantity(self, text: str) -> int | None:
         """抽取数量：优先“数字+量词”，其次“买/数量+数字”。"""

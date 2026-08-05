@@ -59,8 +59,13 @@ v1 阶段意图定义分散在三处且互相不一致：
 | PRODUCT.ASK_INFO | 商品介绍/参数/属性（含别名 ASK_ATTR） | — | product_id, attr_type | L0 | 70 |
 | PRODUCT.ASK_PRICE | 询价/议价（含别名 BARGAIN） | — | product_id | L0 | 70 |
 | PRODUCT.ASK_STOCK | 库存/现货查询 | product_id | sku_attr | L0 | 70 |
-| PRODUCT.COMPARE | 多商品对比 | product_ids(≥2) | — | L0 | 70 |
-| PRODUCT.RECOMMEND | 推荐选购 | — | budget, use_scene, preference | L0 | 70 |
+| PRODUCT.COMPARE | 多商品对比 | compare_items(两款名称) | — | L0 | 70 |
+| PRODUCT.RECOMMEND | 推荐选购 | category, budget | use_scene, preference | L0 | 70 |
+
+> 2026-08-05（Stage 32 实做）：COMPARE 必填由 product_ids 改为
+> compare_items（「A和B」整段捕获后节点内切分——用户不知道商品 ID）；
+> RECOMMEND 补 category/budget 必填（对候选集影响最大的两个硬约束，
+> 一条 collect 模板一次问齐）。use_scene/preference 收集但 v1 不参与排序。
 
 ### ORDER 域（4）
 

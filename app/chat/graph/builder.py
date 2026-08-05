@@ -36,7 +36,11 @@ from app.chat.graph.nodes.guardrail_check import guardrail_check
 from app.chat.graph.nodes.intent_classify import intent_classify
 from app.chat.graph.nodes.load_session_state import load_session_state
 from app.chat.graph.nodes.preprocess_message import preprocess_message
-from app.chat.graph.nodes.product_answer import PRODUCT_FACT_INTENTS, product_answer
+from app.chat.graph.nodes.product_answer import (
+    ADVISOR_INTENTS,
+    PRODUCT_FACT_INTENTS,
+    product_answer,
+)
 from app.chat.graph.nodes.rag_answer import rag_answer
 from app.chat.graph.nodes.response_generate import response_generate
 from app.chat.graph.nodes.save_turn import save_turn
@@ -108,8 +112,9 @@ def _route_after_skill(state: GraphState) -> str:
     if final_intent in TOOL_QUERY_INTENTS and status == TurnStatus.DONE:
         return "tool_invoke"
 
-    # R3：商品信息类意图且槽位齐全（本轮可产出答案）→ 商品库优先
-    if final_intent in PRODUCT_FACT_INTENTS and status == TurnStatus.DONE:
+    # R3：商品信息类意图且槽位齐全（本轮可产出答案）→ 商品库优先；
+    # Stage 32：选品/对比同路（槽位齐→硬约束候选/结构化对比，补槽轮不进）
+    if final_intent in (PRODUCT_FACT_INTENTS | ADVISOR_INTENTS) and status == TurnStatus.DONE:
         return "product_answer"
 
     if not settings.KB_ENABLED:
