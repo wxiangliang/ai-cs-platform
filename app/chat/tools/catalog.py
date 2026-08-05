@@ -20,32 +20,40 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ToolMeta:
-    """工具声明：一句话描述（进诊断决策 prompt）+ 是否只读。"""
+    """工具声明：一句话描述（进诊断决策 prompt）+ 是否只读 + 最低身份等级。
+
+    min_ial（Stage 35）：IAL0 无要求 / IAL1 渠道身份 / IAL2 OTP 级 /
+    IAL3 高风险二次验证。执法点在 ActionExecutor（写）与 tool_invoke（读），
+    结构性拒绝——模型任何输出都绕不过。
+    """
 
     description: str
     readonly: bool
+    min_ial: int = 0
 
 
 # 规范名工具目录（与 mock_provider._dispatch / MCP 服务工具保持一致）
 TOOL_CATALOG: dict[str, ToolMeta] = {
     # —— 只读查询（诊断 agent 白名单由此推导）——
-    "query_order": ToolMeta("查询订单状态/金额/运单号（参数 order_id）", readonly=True),
-    "query_logistics_track": ToolMeta("查询物流轨迹与最新进度（参数 order_id）", readonly=True),
+    # 政策类公开信息 IAL0；涉个人数据（订单/物流/优惠券/会员）IAL1
+    "query_order": ToolMeta("查询订单状态/金额/运单号（参数 order_id）", readonly=True, min_ial=1),
+    "query_logistics_track": ToolMeta("查询物流轨迹与最新进度（参数 order_id）", readonly=True, min_ial=1),
     "query_refund_policy": ToolMeta("查询退款/退货政策（无参数）", readonly=True),
     "query_shipping_policy": ToolMeta("查询运费/配送政策（无参数）", readonly=True),
     "query_product": ToolMeta("查询商品价格/库存（参数 product_name）", readonly=True),
-    "query_user_coupons": ToolMeta("查询用户可用优惠券（无参数）", readonly=True),
-    "query_member_status": ToolMeta("查询用户是否已注册会员（参数 user_id）", readonly=True),
+    "query_user_coupons": ToolMeta("查询用户可用优惠券（无参数）", readonly=True, min_ial=1),
+    "query_member_status": ToolMeta("查询用户是否已注册会员（参数 user_id）", readonly=True, min_ial=1),
     # —— 写操作（唯一入口 ActionExecutor，永不进任何模型可选白名单）——
-    "create_refund_ticket": ToolMeta("提交退款工单", readonly=False),
-    "create_return_ticket": ToolMeta("提交退货工单", readonly=False),
-    "create_exchange_ticket": ToolMeta("提交换货工单", readonly=False),
-    "create_repair_ticket": ToolMeta("提交维修工单", readonly=False),
-    "create_complaint_ticket": ToolMeta("提交投诉工单", readonly=False),
-    "create_invoice": ToolMeta("提交开票申请", readonly=False),
-    "cancel_order": ToolMeta("取消订单", readonly=False),
-    "update_order_address": ToolMeta("修改订单收货地址", readonly=False),
-    "register_member": ToolMeta("注册会员（Stage 33）", readonly=False),
+    # 改地址 IAL2：收货地址改写是账号盗用的典型攻击面（Stage 35 评审示例）
+    "create_refund_ticket": ToolMeta("提交退款工单", readonly=False, min_ial=1),
+    "create_return_ticket": ToolMeta("提交退货工单", readonly=False, min_ial=1),
+    "create_exchange_ticket": ToolMeta("提交换货工单", readonly=False, min_ial=1),
+    "create_repair_ticket": ToolMeta("提交维修工单", readonly=False, min_ial=1),
+    "create_complaint_ticket": ToolMeta("提交投诉工单", readonly=False, min_ial=1),
+    "create_invoice": ToolMeta("提交开票申请", readonly=False, min_ial=1),
+    "cancel_order": ToolMeta("取消订单", readonly=False, min_ial=1),
+    "update_order_address": ToolMeta("修改订单收货地址", readonly=False, min_ial=2),
+    "register_member": ToolMeta("注册会员（Stage 33）", readonly=False, min_ial=1),
 }
 
 # mock 派发接受的同义 id → 规范名（不进白名单，仅存在性说明）
@@ -72,3 +80,10 @@ def is_declared_write_tool(tool_id: str) -> bool:
     canonical = TOOL_ALIASES.get(tool_id, tool_id)
     meta = TOOL_CATALOG.get(canonical)
     return meta is not None and not meta.readonly
+
+
+def required_ial(tool_id: str) -> int:
+    """工具最低身份等级（含 alias 归一）；未收录工具按 IAL1 保守处理。"""
+    canonical = TOOL_ALIASES.get(tool_id, tool_id)
+    meta = TOOL_CATALOG.get(canonical)
+    return meta.min_ial if meta is not None else 1

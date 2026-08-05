@@ -18,6 +18,7 @@ from app.chat.skills.responder import render_reply
 from app.chat.tools.base import mask_sensitive
 from app.chat.tools.factory import get_tool_provider
 from app.core.config import settings
+from app.core.i18n import t as t_
 from app.core.logging import get_logger
 from app.repositories.chat_tool_call_repository import chat_tool_call_repository
 
@@ -68,6 +69,37 @@ async def tool_invoke(state: GraphState, config: RunnableConfig) -> dict[str, An
     # 按 Skill 声明的工具链依次调用，返回数据逐步合并（后者可用前者的返回，
     # 如 query_order 的 tracking_number 供 query_logistics_track 使用）
     tool_ids = [t.tool_id for t in skill.required_tools if not t.optional] or ["query_order"]
+
+    # —— Stage 35 身份等级执法（读侧）：任一必需工具等级不足 → 不调用，
+    # 回核实话术 + 建单交人工核实（涉个人数据的查询不能只凭「知道订单号」）——
+    from app.core.identity import identity_sufficient
+
+    lacking = [x for x in tool_ids if not identity_sufficient(x)]
+    if lacking:
+        identity_trace: dict[str, Any] = {"tool_calls": [
+            {"tool_id": x, "ok": False, "error_code": "IDENTITY_REQUIRED"} for x in lacking
+        ]}
+        try:
+            from app.services.handoff_service import handoff_service
+
+            ticket_id, created = await handoff_service.ensure_ticket(
+                session,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_id=state.get("user_id", ""),
+                reason="IDENTITY_VERIFY",
+                source_intent=intent,
+            )
+            identity_trace["handoff"] = {"reason": "IDENTITY_VERIFY",
+                                         "ticket_id": ticket_id, "created": created}
+        except Exception:  # noqa: BLE001 - 建单失败只告警
+            logger.exception("handoff ticket for identity verify failed")
+        return {
+            "reply": t_("identity.verify_required", state.get("locale")),
+            "answer_source": "tool",
+            "retrieval": identity_trace,
+            "graph_trace": ["tool_invoke:identity"],
+        }
     merged: dict[str, Any] = {}
     calls: list[dict[str, Any]] = []
     params = {**slots}

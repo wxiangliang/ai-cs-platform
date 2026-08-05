@@ -36,6 +36,7 @@ REASON_CASE_MAP: dict[str, tuple[str, str]] = {
     "SKILL_RULE": ("POLICY_REVIEW", "NORMAL"),
     "ABUSE": ("ABUSE", "NORMAL"),
     "LOW_CSAT": ("SERVICE_QUALITY", "NORMAL"),
+    "IDENTITY_VERIFY": ("POLICY_REVIEW", "NORMAL"),  # Stage 35 身份核实
 }
 
 _PRIORITY_RANK = {"LOW": 0, "NORMAL": 1, "HIGH": 2}

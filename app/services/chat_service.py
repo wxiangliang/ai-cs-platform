@@ -26,6 +26,7 @@ from app.chat.memory.scheduler import (
     enqueue_memory_after_commit,
     wait_pending_memory_tasks,
 )
+from app.core.config import settings
 from app.core.exceptions import AppException
 from app.core.i18n import resolve_locale
 from app.core.logging import get_logger, get_trace_id, set_trace_id
@@ -75,6 +76,11 @@ class ChatService:
         # 预算归属（Stage 17）：写入当前租户，供 LLM 收口计量与熔断；
         # 提交后记忆任务会显式恢复租户上下文
         set_current_tenant(tenant_id)
+        # 身份等级注入（Stage 35）：AUTH_ENABLED 下能到这里的请求都已过
+        # chat scope 鉴权=渠道身份成立；开发模式走沙盒基线（默认互信）
+        from app.core.identity import set_identity_level
+
+        set_identity_level(authenticated=settings.AUTH_ENABLED)
         # 轮级 LLM 时间预算（容量修复）：本轮所有 LLM 调用共享 deadline，
         # 耗尽后各调用点走既有降级路径（与无 Key 同路径），单轮时长有界
         start_turn_budget()

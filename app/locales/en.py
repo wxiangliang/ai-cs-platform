@@ -17,6 +17,8 @@ TABLE: dict[str, str] = {
     "csat.ask_handoff": "Your session with our agent has ended. Please rate this service (1-5, 5 is best), or reply \"satisfied\" / \"unsatisfied\".",
     # skill 模板覆盖示范：非默认语言查 skill.<skill_id>.<template_key>
     "skill.aftersale_refund.collect": "Sure, I'll help with the refund. Please share your order number or the phone number used to order.",
+    # Stage 35 identity assurance
+    "identity.verify_required": "For your account's security, this operation requires identity verification first. I've connected you to a human agent to verify — once done, we can continue.",
     # Stage 31 proactive service
     "proactive.campaign_mention": "\nBy the way, {hook}. Feel free to ignore this, or reply \"no recommendations\" to opt out.",
     "proactive.onboarding_mention": "\nBy the way, you haven't registered as a member yet — reply \"register\" and I'll set it up in a minute. Feel free to ignore this, or reply \"no recommendations\" to opt out.",

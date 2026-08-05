@@ -303,6 +303,13 @@ class Settings(BaseSettings):
     PROACTIVE_ONBOARDING_ENABLED: bool = True
     PROACTIVE_ONBOARDING_MAX: int = 2
 
+    # ----- Stage 35 身份核验分级（IAL）-----
+    # 工具最低等级声明在 app/chat/tools/catalog.py（单一事实来源）；
+    # 开发默认 2=沙盒互信零回归；生产按需下调（1 → 改地址等 IAL2 工具
+    # 未达标结构性拒绝转人工核实）。OTP 渠道接入前 IAL2 不可达（遗留 1）
+    IDENTITY_DEFAULT_LEVEL: int = 2
+    IDENTITY_LEVEL_AUTHENTICATED: int = 1
+
     # ----- Stage 34 Case 工单与 SLA 治理 -----
     # SLA 解决时限（小时，按优先级）；超时由 cron（case_sla_check）升级 ESCALATED
     CASE_SLA_HOURS_HIGH: int = 4

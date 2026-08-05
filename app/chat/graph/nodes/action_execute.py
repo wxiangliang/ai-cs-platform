@@ -72,6 +72,33 @@ async def action_execute(state: GraphState, config: RunnableConfig) -> dict[str,
             "graph_trace": ["action_execute"],
         }
 
+    # —— Stage 35：身份等级不足 → 核实话术 + 建单交人工核实（不算执行失败，
+    # 未消耗防重放执行权，人工核实后可重新走确认流程）——
+    if outcome is not None and outcome.error_code == "IDENTITY_REQUIRED":
+        reply = t("identity.verify_required", state.get("locale"))
+        try:
+            from app.services.handoff_service import handoff_service
+
+            ticket_id, created = await handoff_service.ensure_ticket(
+                session,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_id=state.get("user_id", ""),
+                reason="IDENTITY_VERIFY",
+                source_intent=intent,
+            )
+            tool_trace["handoff"] = {
+                "reason": "IDENTITY_VERIFY", "ticket_id": ticket_id, "created": created,
+            }
+        except Exception:  # noqa: BLE001 - 建单失败只告警
+            logger.exception("handoff ticket for identity verify failed")
+        return {
+            "reply": reply,
+            "answer_source": "action_executor",
+            "retrieval": tool_trace,
+            "graph_trace": ["action_execute:identity"],
+        }
+
     # 执行失败：自动建转人工工单（Stage 07，「已记录由人工跟进」不再是空话）
     reply = t("action.failed", state.get("locale"))
     try:

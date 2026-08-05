@@ -70,6 +70,17 @@ class ActionExecutor:
             # 声明为无确认的 action 也从本入口走（统一审计），只是不查确认状态
             logger.info("action %s 声明无需确认，直接执行", action.action_id)
 
+        # —— 校验 1.5：身份等级（Stage 35，目录声明为准）——放在防重放之前：
+        # 等级不足不消耗执行权，核实后重试仍可执行
+        from app.core.identity import identity_sufficient
+
+        if not identity_sufficient(action.action_id):
+            logger.warning(
+                "action executor rejected: %s 需要更高身份等级（当前配置见 IDENTITY_*）",
+                action.action_id,
+            )
+            return ExecutionOutcome(ok=False, error_code="IDENTITY_REQUIRED")
+
         # —— 校验 2：必填槽位齐全 ——
         missing = [s for s in skill.required_slots if not slots.get(s)]
         if missing:
