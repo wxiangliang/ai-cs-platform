@@ -33,12 +33,35 @@
     <!-- 右：对话流 -->
     <el-card class="chat" shadow="never" body-class="chat-body">
       <template #header>
-        对话控制台
-        <el-text size="small" type="info">（AI 回复附链路决策标签，用于测试观察）</el-text>
+        <div class="chat-header">
+          <span>
+            对话控制台
+            <el-text size="small" type="info">（AI 回复附链路决策标签，用于测试观察）</el-text>
+          </span>
+          <span class="ws-status">
+            <el-tooltip
+              content="WS 只收服务端推送（坐席回复/会话归还/主动消息）；bot 回复走 HTTP。鉴权模式下浏览器 WS 不可用（无法携带 Bearer 头）"
+              placement="bottom"
+            >
+              <el-tag size="small" :type="wsTagType">实时通道：{{ wsStatusText }}</el-tag>
+            </el-tooltip>
+            <el-button
+              v-if="wsStatus === 'closed' && sessionId"
+              size="small"
+              text
+              type="primary"
+              @click="connectWs"
+            >
+              重连
+            </el-button>
+          </span>
+        </div>
       </template>
       <div ref="listEl" class="messages">
         <div v-for="msg in messages" :key="msg.key" class="row" :class="msg.role">
           <div class="bubble" :class="msg.role">
+            <div v-if="msg.role === 'agent'" class="bubble-label">人工坐席</div>
+            <div v-if="msg.role === 'system'" class="bubble-label">系统事件</div>
             <div class="content">{{ msg.content }}</div>
             <div v-if="msg.role === 'ai' && (msg.intent || msg.status)" class="tags">
               <el-tag v-if="msg.intent" size="small">{{ msg.intent }}</el-tag>
@@ -70,15 +93,16 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { ElMessage } from "element-plus";
 
 import { createSession, listMessages, sendMessage } from "@/api/chat";
 import { ApiError } from "@/api/client";
+import { canUseWs, openSessionWs, type WsEvent, type WsStatus } from "@/api/ws";
 
 interface Bubble {
   key: string;
-  role: "user" | "ai";
+  role: "user" | "ai" | "agent" | "system";
   content: string;
   intent?: string | null;
   status?: string | null;
@@ -93,6 +117,51 @@ const creating = ref(false);
 const sending = ref(false);
 const loadingHistory = ref(false);
 const listEl = ref<HTMLElement>();
+
+// —— 实时通道（Stage 15 用户端 WS：坐席回复/会话归还/主动消息）——
+const wsStatus = ref<WsStatus>(canUseWs() ? "closed" : "unavailable");
+let socket: WebSocket | null = null;
+
+const wsStatusText = computed(
+  () =>
+    ({ connected: "已连接", closed: "未连接", unavailable: "不可用（鉴权模式）" })[
+      wsStatus.value
+    ],
+);
+const wsTagType = computed(
+  () => ({ connected: "success", closed: "info", unavailable: "warning" })[wsStatus.value],
+);
+
+function connectWs() {
+  socket?.close();
+  socket = openSessionWs(sessionId.value, {
+    onStatus: (status) => (wsStatus.value = status),
+    onEvent: async (event: WsEvent) => {
+      if (event.type === "agent_reply") {
+        messages.value.push({
+          key: event.message_id || `agent-${Date.now()}`,
+          role: "agent",
+          content: event.content,
+        });
+      } else if (event.type === "session_resumed") {
+        messages.value.push({
+          key: `sys-${Date.now()}`,
+          role: "system",
+          content: event.content || "人工服务已结束，会话已交还智能助手。",
+        });
+      } else if (event.type === "proactive") {
+        messages.value.push({
+          key: event.message_id || `pro-${Date.now()}`,
+          role: "system",
+          content: `[${event.category || "通知"}] ${event.content}`,
+        });
+      }
+      await scrollToBottom();
+    },
+  });
+}
+
+onBeforeUnmount(() => socket?.close());
 
 // 覆盖主链路关键路径的测试话术（补槽/确认门/切换守护/多意图/澄清）
 const quickFills = [
@@ -120,6 +189,8 @@ async function newSession() {
     sessionId.value = data.session_id;
     messages.value = [];
     ElMessage.success("会话已创建");
+    // 建会话即挂实时通道（开发模式；鉴权模式浏览器 WS 不可用，状态标签如实显示）
+    if (canUseWs()) connectWs();
   } catch (err) {
     toast(err);
   } finally {
@@ -224,6 +295,28 @@ async function loadHistory() {
   background: #f0f2f5;
   color: #303133;
 }
+.bubble.agent {
+  background: #e7f6ec;
+  color: #303133;
+  border: 1px solid #b3e0c2;
+}
+.row.system {
+  justify-content: center;
+}
+.bubble.system {
+  background: #fdf6ec;
+  color: #8a6d3b;
+  font-size: 12px;
+  max-width: 88%;
+}
+.bubble-label {
+  font-size: 11px;
+  color: #67c23a;
+  margin-bottom: 2px;
+}
+.bubble.system .bubble-label {
+  color: #e6a23c;
+}
 .tags {
   margin-top: 6px;
   display: flex;
@@ -235,6 +328,16 @@ async function loadHistory() {
   gap: 8px;
   padding-top: 10px;
   border-top: 1px solid #e4e7ed;
+}
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ws-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .w-full {
   width: 100%;

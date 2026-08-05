@@ -16,6 +16,7 @@ export default defineConfig({
       "/api": {
         target: process.env.VITE_API_TARGET || "http://localhost:8000",
         changeOrigin: true,
+        ws: true, // WebSocket 升级请求一并代理（用户端实时通道）
       },
     },
   },
