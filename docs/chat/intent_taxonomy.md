@@ -14,7 +14,7 @@ v1 阶段意图定义分散在三处且互相不一致：
 | 位置 | 数量 | 问题示例 |
 |---|---|---|
 | `app/chat/intent/types.py` | 16 个 | 用 `META.HANDOFF_REQUEST`，缺 `ORDER.CANCEL` 等 13 个业务意图 |
-| `docs/chat/skills_design/skills/` | 29 个文件 34+ 标签 | 用 `META.TRANSFER_HUMAN`，schema 的 domain 枚举漏了 LOGISTICS |
+|  `skills/`（原 docs/chat/skills_design/skills/）| 29 个文件 34+ 标签 | 用 `META.TRANSFER_HUMAN`，schema 的 domain 枚举漏了 LOGISTICS |
 | `00_skill_schema.md` 文件组织节 | 13 个 | 又是第三套命名（`META.IDENTITY`、`ORDER.QUERY_LOGISTICS`） |
 
 由此产生的实际 bug：用户说「我要取消订单」被规则分类器命中 `META.ABORT`（放弃当前操作），

@@ -110,7 +110,7 @@ v1 实现存在如下必须修复的缺陷（详见 `requirements/stage-03-chat-
 详见 `requirements/stage-05-tools-confirmation/`（文档附录有实现记录与范围调整：
 Skill Loader 为双源合并、挂起任务自动恢复+续办提示、新增上下文槽位继承）。原规划要点：
 
-- **Skill Loader**：从 `docs/chat/skills_design/skills/*.md` 的 YAML front-matter 加载 Skill 声明（替换内存静态注册表），启动时校验 schema（含 risk_level/priority/tool_returns）。
+- **Skill Loader**：从仓库根 `skills/*.md` 的 YAML front-matter 加载（2026-08-05 自 docs/chat/skills_design/skills/ 迁移） Skill 声明（替换内存静态注册表），启动时校验 schema（含 risk_level/priority/tool_returns）。
 - **工具接口层**：`ToolProvider` 协议 + mock 实现（query_order / query_logistics / create_refund_ticket 等），真实对接留到业务系统就绪。
 - **确认门闭环**：ConfirmationResponseParser（理解确认/否认/修改）+ ActionExecutor（执行前二次校验风险等级与槽位完整性）+ 执行结果落 chat_tool_call。
 - **新表**：`chat_task`（任务生命周期持久化，替代仅存 JSONB 快照）、`chat_tool_call`（工具调用审计）。

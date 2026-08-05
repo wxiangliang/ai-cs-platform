@@ -1,5 +1,9 @@
 # Skills 设计参考文档
 
+> **Skill 声明文件已迁至仓库根 `skills/`**（2026-08-05，Stage 31：运行时
+> 加载物不放 docs——Skill Loader 启动时读它们构建注册表，是配置不是文档）。
+> 本目录保留：`00_skill_schema.md`（字段规范）、`guardrails.md`（护栏规则库
+> 单一事实来源，Stage 14 引擎从这里解析）、本 README。
 > 所有 Skill 文件均为 YAML front-matter + Markdown body 格式，定义见 `00_skill_schema.md`（v2）。
 > 意图码、优先级、风险等级的单一事实来源是 `docs/chat/intent_taxonomy.md`。
 

@@ -361,7 +361,7 @@ _SKILLS: dict[str, Skill] = {
 # 兜底 Skill（找不到对应意图时使用）
 _FALLBACK_SKILL = _SKILLS[IntentLabel.META_UNKNOWN]
 
-# —— Stage 05：启动时把 skills_design md 的能力声明（工具/动作/风险等级等）
+# —— Stage 05：启动时把 skills/ md 的能力声明（工具/动作/风险等级等）
 # 合并进注册表；校验失败（SkillLoadError）直接抛出，禁止带病上线 ——
 from app.chat.skills.loader import apply_declarations  # noqa: E402  循环导入规避：loader 不依赖本模块
 

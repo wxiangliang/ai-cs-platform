@@ -155,7 +155,8 @@ LLM 生成最终回复（此时已有工具结果作为上下文）
 
 ## 文件组织
 
-Skill 文件统一存放于 `docs/chat/skills_design/skills/`，文件名 = `skill_id`.md，
+Skill 文件统一存放于**仓库根 `skills/`**（2026-08-05 起：运行时加载物不放 docs；
+schema 规范与 guardrails 规则库仍在本目录），文件名 = `skill_id`.md，
 完整清单见同目录 `README.md`（31 个），意图码以 `docs/chat/intent_taxonomy.md` 注册表为准。
 Stage 05 起由 `app/chat/skills/loader.py` 在启动时加载并校验。
 

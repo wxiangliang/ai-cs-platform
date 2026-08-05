@@ -1,6 +1,6 @@
 """Skill Loader（Stage 05）。
 
-从 docs/chat/skills_design/skills/*.md 解析 YAML front-matter，
+从仓库根 skills/*.md 解析 YAML front-matter（schema 见 docs/chat/skills_design/00_skill_schema.md），
 把能力声明（required_tools / actions / tool_returns / constraints / risk_level /
 priority / rag_fallback / prompt_fragment）合并进代码注册表的 Skill 对象。
 
@@ -32,7 +32,9 @@ logger = get_logger(__name__)
 
 # 锚定仓库根（Stage 13）：从任意 CWD 启动都能找到，不再依赖工作目录
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-SKILLS_DIR = _REPO_ROOT / "docs/chat/skills_design/skills"
+# Stage 31 起技能声明移至仓库根 skills/（运行时加载物不放 docs；
+# schema 规范与护栏规则库仍在 docs/chat/skills_design/）
+SKILLS_DIR = _REPO_ROOT / "skills"
 
 _DOMAINS = {
     "PRODUCT", "ORDER", "LOGISTICS", "AFTERSALE", "PAYMENT",

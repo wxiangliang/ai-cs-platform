@@ -2,7 +2,7 @@
 
 Skill 是“处理某类意图所需的能力声明”，不是业务代码本身。
 Stage 05 起为「双源合并」：代码注册表提供运行时模板与必填槽位，
-skills_design 的 md 文件（YAML front-matter）提供工具/动作/约束等能力声明，
+仓库根 skills/ 的 md 文件（YAML front-matter，schema 在 docs/chat/skills_design/）提供工具/动作/约束等能力声明，
 由 loader 在启动时合并（见 app/chat/skills/loader.py）。
 """
 
