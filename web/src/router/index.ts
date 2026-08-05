@@ -30,6 +30,12 @@ export const menuRoutes: RouteRecordRaw[] = [
         component: () => import("@/views/observe/SessionExplorer.vue"),
         meta: { title: "会话记录" },
       },
+      {
+        path: "system",
+        name: "observe-system",
+        component: () => import("@/views/observe/SystemStatus.vue"),
+        meta: { title: "系统状态" },
+      },
     ],
   },
   {
@@ -51,14 +57,14 @@ export const menuRoutes: RouteRecordRaw[] = [
       {
         path: "documents",
         name: "kb-documents",
-        component: () => import("@/views/PlaceholderView.vue"),
-        meta: { title: "文档管理", placeholder: "知识库运营页（Stage 16 遗留前端，排队实化）" },
+        component: () => import("@/views/kb/KbDocuments.vue"),
+        meta: { title: "文档管理" },
       },
       {
         path: "faqs",
         name: "kb-faqs",
-        component: () => import("@/views/PlaceholderView.vue"),
-        meta: { title: "FAQ 管理", placeholder: "FAQ 精确层管理（排队实化）" },
+        component: () => import("@/views/kb/KbFaqs.vue"),
+        meta: { title: "FAQ 管理" },
       },
     ],
   },
@@ -69,8 +75,8 @@ export const menuRoutes: RouteRecordRaw[] = [
       {
         path: "list",
         name: "product-list",
-        component: () => import("@/views/PlaceholderView.vue"),
-        meta: { title: "商品管理", placeholder: "商品库管理（排队实化）" },
+        component: () => import("@/views/product/ProductList.vue"),
+        meta: { title: "商品管理" },
       },
     ],
   },

@@ -7,7 +7,7 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,9 +17,80 @@ from app.core.responses import success_response
 from app.db.session import get_db_session
 from app.kb.ingest import kb_ingest_service
 from app.kb.parsing.router import SUPPORTED_EXTENSIONS, DocumentParseError
+from app.repositories.faq_entry_repository import faq_entry_repository
+from app.repositories.kb_document_repository import kb_document_repository
 from app.services.kb_operations_service import kb_operations_service
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
+
+
+@router.get("/documents")
+async def list_documents(
+    auth: AuthContext | None = Depends(require_admin),
+    tenant_id: str | None = Query(default=None, max_length=64),
+    status: str | None = Query(default=None, max_length=32, description="draft/pending_review/published/archived"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """文档运营列表（Stage 29 批 3）：全状态可查，更新时间倒序。
+
+    生效判据提示：published_version 非空且未 archived 才在线上服务
+    （不单看 status，Stage 16 语义）。
+    """
+    tid = resolve_tenant_id(auth, tenant_id)
+    rows = await kb_document_repository.list_by_tenant(
+        db, tid, status=status, limit=limit, offset=offset
+    )
+    return success_response(
+        data={
+            "documents": [
+                {
+                    "document_id": d.id,
+                    "title": d.title,
+                    "status": d.status,
+                    "source_type": d.source_type,
+                    "published_version": d.published_version,
+                    "needs_reindex": d.needs_reindex,
+                    "effective_from": d.effective_from.isoformat() if d.effective_from else None,
+                    "expire_at": d.expire_at.isoformat() if d.expire_at else None,
+                    "updated_at": d.updated_at.isoformat(),
+                }
+                for d in rows
+            ],
+            "has_more": len(rows) == limit,
+        }
+    )
+
+
+@router.get("/faqs")
+async def list_faqs(
+    auth: AuthContext | None = Depends(require_admin),
+    tenant_id: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """FAQ 运营列表（Stage 29 批 3）：全状态，更新时间倒序。"""
+    tid = resolve_tenant_id(auth, tenant_id)
+    rows = await faq_entry_repository.list_by_tenant(db, tid, limit=limit, offset=offset)
+    return success_response(
+        data={
+            "faqs": [
+                {
+                    "faq_id": f.id,
+                    "question": f.question,
+                    "answer": f.answer,
+                    "category": f.category,
+                    "status": f.status,
+                    "hit_count": f.hit_count,
+                    "updated_at": f.updated_at.isoformat(),
+                }
+                for f in rows
+            ],
+            "has_more": len(rows) == limit,
+        }
+    )
 
 
 class KbDocumentRequest(BaseModel):

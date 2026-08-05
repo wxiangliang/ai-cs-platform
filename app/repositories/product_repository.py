@@ -13,6 +13,27 @@ class ProductRepository(BaseRepository[ProductItem]):
     def __init__(self) -> None:
         super().__init__(ProductItem)
 
+    async def list_by_tenant(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        *,
+        keyword: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ProductItem]:
+        """管理列表（Stage 29 批 3）：全状态，可按名称/编码关键词过滤，更新时间倒序。"""
+        stmt = select(ProductItem).where(ProductItem.tenant_id == tenant_id)
+        if keyword:
+            stmt = stmt.where(
+                or_(
+                    ProductItem.name.ilike(f"%{keyword}%"),
+                    ProductItem.product_code.ilike(f"%{keyword}%"),
+                )
+            )
+        stmt = stmt.order_by(ProductItem.updated_at.desc()).limit(limit).offset(offset)
+        return await self._all(session, stmt)
+
     async def search_by_name(
         self,
         session: AsyncSession,

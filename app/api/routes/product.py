@@ -4,7 +4,7 @@
 临时保护同 kb：配置 KB_ADMIN_TOKEN 后需带 X-KB-Admin-Token 头。
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,42 @@ class ProductUpsertRequest(BaseModel):
     stock: int | None = Field(default=None, ge=0)
     attrs: dict | None = None
     description: str | None = None
+
+
+@router.get("/items")
+async def list_products(
+    auth: AuthContext | None = Depends(require_admin),
+    tenant_id: str | None = Query(default=None, max_length=64),
+    keyword: str | None = Query(default=None, max_length=64, description="名称/编码模糊过滤"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """商品管理列表（Stage 29 批 3）：全状态，更新时间倒序。"""
+    tid = resolve_tenant_id(auth, tenant_id)
+    rows = await product_repository.list_by_tenant(
+        db, tid, keyword=keyword, limit=limit, offset=offset
+    )
+    return success_response(
+        data={
+            "items": [
+                {
+                    "id": p.id,
+                    "product_code": p.product_code,
+                    "name": p.name,
+                    "category": p.category,
+                    "price_cents": p.price_cents,
+                    "stock": p.stock,
+                    "status": p.status,
+                    "description": p.description,
+                    "attrs": p.attrs_json,
+                    "updated_at": p.updated_at.isoformat(),
+                }
+                for p in rows
+            ],
+            "has_more": len(rows) == limit,
+        }
+    )
 
 
 @router.post("/items")

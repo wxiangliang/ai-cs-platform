@@ -26,6 +26,25 @@ class FaqEntryRepository(BaseRepository[FaqEntry]):
         )
         return await self._all(session, stmt)
 
+
+    async def list_by_tenant(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[FaqEntry]:
+        """运营列表（Stage 29 批 3）：全状态，更新时间倒序。"""
+        stmt = (
+            select(FaqEntry)
+            .where(FaqEntry.tenant_id == tenant_id)
+            .order_by(FaqEntry.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return await self._all(session, stmt)
+
     async def list_active(
         self, session: AsyncSession, tenant_id: str, limit: int = 2000
     ) -> list[FaqEntry]:

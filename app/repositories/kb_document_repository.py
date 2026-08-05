@@ -33,6 +33,23 @@ class KbDocumentRepository(BaseRepository[KbDocument]):
         )
         return await self._all(session, stmt)
 
+
+    async def list_by_tenant(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[KbDocument]:
+        """运营列表（Stage 29 批 3）：全状态可查，更新时间倒序。"""
+        stmt = select(KbDocument).where(KbDocument.tenant_id == tenant_id)
+        if status:
+            stmt = stmt.where(KbDocument.status == status)
+        stmt = stmt.order_by(KbDocument.updated_at.desc()).limit(limit).offset(offset)
+        return await self._all(session, stmt)
+
     async def list_active(
         self, session: AsyncSession, tenant_id: str, limit: int = 500
     ) -> list[KbDocument]:

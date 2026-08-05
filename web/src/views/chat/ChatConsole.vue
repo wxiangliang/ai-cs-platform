@@ -99,9 +99,14 @@
           placeholder="输入消息，Ctrl+Enter 发送"
           @keydown.ctrl.enter.prevent="send"
         />
-        <el-button type="primary" :loading="sending" :disabled="!sessionId" @click="send">
-          发送
-        </el-button>
+        <div class="composer-side">
+          <el-button type="primary" :loading="sending" :disabled="!sessionId" @click="send">
+            发送
+          </el-button>
+          <el-tooltip content="SSE 流式：delta 渐进渲染，done 落最终决策标签">
+            <el-checkbox v-model="streamMode" size="small">流式</el-checkbox>
+          </el-tooltip>
+        </div>
       </div>
     </el-card>
   </div>
@@ -111,7 +116,13 @@
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { ElMessage } from "element-plus";
 
-import { createSession, listMessages, sendMessage, submitFeedback } from "@/api/chat";
+import {
+  createSession,
+  listMessages,
+  sendMessage,
+  sendMessageStream,
+  submitFeedback,
+} from "@/api/chat";
 import { ApiError } from "@/api/client";
 import { canUseWs, openSessionWs, type WsEvent, type WsStatus } from "@/api/ws";
 
@@ -131,6 +142,7 @@ const messages = ref<Bubble[]>([]);
 const draft = ref("");
 const creating = ref(false);
 const sending = ref(false);
+const streamMode = ref(false);
 const loadingHistory = ref(false);
 const listEl = ref<HTMLElement>();
 
@@ -222,22 +234,50 @@ async function send() {
   draft.value = "";
   await scrollToBottom();
   try {
-    const data = await sendMessage(sessionId.value, text);
-    messages.value.push({
-      key: data.message_id,
-      role: "ai",
-      content: data.reply,
-      intent: data.intent,
-      status: data.status,
-      state: data.state,
-      traceId: data.trace_id,
-    });
+    if (streamMode.value) {
+      await sendStreaming(text);
+    } else {
+      const data = await sendMessage(sessionId.value, text);
+      messages.value.push({
+        key: data.message_id,
+        role: "ai",
+        content: data.reply,
+        intent: data.intent,
+        status: data.status,
+        state: data.state,
+        traceId: data.trace_id,
+      });
+    }
   } catch (err) {
     toast(err);
   } finally {
     sending.value = false;
     await scrollToBottom();
   }
+}
+
+async function sendStreaming(text: string) {
+  // 先放一个空 AI 气泡，delta 渐进填充；done 事件补决策标签并换正式 message_id
+  const bubble: Bubble = { key: `s-${Date.now()}`, role: "ai", content: "" };
+  messages.value.push(bubble);
+  await sendMessageStream(sessionId.value, text, {
+    onDelta: (piece) => {
+      bubble.content += piece;
+      void scrollToBottom();
+    },
+    onDone: (data) => {
+      bubble.key = data.message_id;
+      bubble.content = data.reply;
+      bubble.intent = data.intent;
+      bubble.status = data.status;
+      bubble.state = data.state;
+      bubble.traceId = data.trace_id;
+    },
+    onError: (code, message) => {
+      bubble.content = bubble.content || `[${code}] ${message}`;
+      ElMessage.error(`${code}: ${message}`);
+    },
+  });
 }
 
 async function vote(msg: Bubble, rating: "up" | "down") {
@@ -354,6 +394,12 @@ async function loadHistory() {
   gap: 8px;
   padding-top: 10px;
   border-top: 1px solid #e4e7ed;
+}
+.composer-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 .chat-header {
   display: flex;
