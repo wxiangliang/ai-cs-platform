@@ -1,0 +1,30 @@
+campaign_id: summer_2026
+version: 1
+enabled: false
+title: 夏季指定空调满减
+valid_from: "2026-08-01T00:00:00+08:00"
+valid_to: "2026-08-31T23:59:59+08:00"
+eligible_journey_stages:
+  - REGISTERED
+  - DISCOVERING
+  - CONSIDERING
+  - READY_TO_BUY
+eligible_product_ids:
+  - AC_A3
+  - AC_A5
+benefit:
+  type: fixed_discount
+  threshold_amount: 3000
+  discount_amount: 200
+frequency_cap:
+  max_impressions_per_customer: 2
+  cooldown_hours: 48
+suppression_conditions:
+  - active_complaint
+  - active_refund
+  - negative_sentiment
+  - user_opted_out
+  - human_handoff
+required_disclosures:
+  - 仅限指定型号
+  - 不可与员工折扣叠加

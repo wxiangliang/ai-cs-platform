@@ -1,0 +1,30 @@
+code: NEW_USER_ONBOARDING
+version: 1
+priority: 70
+goal: complete_user_registration
+entry_intents:
+  - ACCOUNT.REGISTRATION_HELP
+required_slots:
+  - registration_channel
+  - phone_or_email
+  - verification_code
+  - consent_accepted
+steps:
+  - CHECK_STATUS
+  - CHOOSE_CHANNEL
+  - COLLECT_IDENTIFIER
+  - SEND_CODE
+  - COLLECT_CODE
+  - VERIFY_CODE
+  - CONFIRM_CREATE_ACCOUNT
+  - CREATE_ACCOUNT
+  - OPTIONAL_PROFILE
+  - COMPLETE
+write_actions:
+  - CREATE_ACCOUNT
+suppression_conditions:
+  - active_complaint
+  - active_refund
+  - human_handoff
+  - already_registered
+timeout_minutes: 30

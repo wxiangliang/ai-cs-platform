@@ -37,6 +37,8 @@ TABLE: dict[str, str] = {
     "intent.switch_clarify_collecting": "我这边还在处理「{name}」：{question}如果您想先办理「{new_name}」，请再明确说一下，我会先挂起当前业务。",
     "intent.switch_clarify_confirming": "当前「{name}」正在等待您的确认：{question}如需办理「{new_name}」，请先回复「确认」或「不用」结束当前步骤。",
     "intent.unknown_with_task": "抱歉，我没太理解这句话。如果是继续办理「{name}」，{question}如果想咨询或办理其他业务，直接说明您的诉求即可。",
+    # —— Stage 31 主动服务 ——
+    "proactive.campaign_mention": "\n对了，{hook}。如不感兴趣可以忽略，回复「不用推荐」以后就不再提啦。",
     # —— Stage 30 对话模式门 ——
     "mode.social_resume": "\n刚才的「{name}」还在办理中，继续提供所需信息就可以，随时可以继续～",
     "mode.oos_boundary": "这个请求超出了我能协助的客服业务范围哈。我可以帮您查订单、物流，办理退换货、退款等售后，或解答商品和平台政策问题～",

@@ -1,0 +1,27 @@
+skills:
+  NEW_USER_ONBOARDING:
+    enabled: false
+    handler: app.chat.skills.onboarding.NewUserOnboardingSkill
+    playbook: skills/new_user_onboarding/playbook.yaml
+
+  PRODUCT_DISCOVERY:
+    enabled: false
+    handler: app.chat.skills.product_discovery.ProductDiscoverySkill
+    playbook: skills/product_discovery/playbook.yaml
+
+  PRODUCT_RECOMMENDATION:
+    enabled: false
+    handler: app.chat.recommendation.service.ProductRecommendationService
+
+  PROMOTION_GUIDE:
+    enabled: false
+    handler: app.chat.campaigns.eligibility.PromotionGuideService
+
+  PURCHASE_ASSIST:
+    enabled: false
+    handler: app.chat.skills.purchase_assist.PurchaseAssistSkill
+
+policy:
+  next_best_action_enabled: false
+  next_best_action_shadow_mode: true
+  max_optional_actions_per_turn: 1

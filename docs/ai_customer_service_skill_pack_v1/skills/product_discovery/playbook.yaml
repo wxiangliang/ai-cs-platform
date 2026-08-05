@@ -1,0 +1,27 @@
+code: PRODUCT_DISCOVERY
+version: 1
+priority: 60
+goal: build_structured_product_need
+entry_intents:
+  - PRODUCT.SELECTION_HELP
+required_slots:
+  - category
+  - budget_range
+  - usage_scenario
+optional_slots:
+  - quantity
+  - brand_preference
+  - must_have_features
+  - excluded_features
+  - size_or_capacity
+  - delivery_deadline
+steps:
+  - IDENTIFY_CATEGORY
+  - COLLECT_HARD_CONSTRAINTS
+  - COLLECT_PREFERENCES
+  - CONFIRM_REQUIREMENTS
+  - REQUEST_RECOMMENDATION
+  - PRESENT_OPTIONS
+  - REFINE_OR_COMPLETE
+timeout_minutes: 120
+resume_policy: summarize_known_slots

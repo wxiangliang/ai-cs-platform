@@ -1,0 +1,11 @@
+[
+  {
+    "campaign_id": "summer_2026_ac",
+    "enabled": true,
+    "valid_from": "2026-08-01T00:00:00+08:00",
+    "valid_to": "2026-08-31T23:59:59+08:00",
+    "eligible_intents": ["PRODUCT.", "FAQ.GENERAL"],
+    "hook": "您咨询的空调品类正在参加夏季满减：满 3000 减 200（仅限指定型号，不可与其他折扣叠加）",
+    "max_per_customer": 2
+  }
+]

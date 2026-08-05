@@ -287,6 +287,18 @@ class Settings(BaseSettings):
     # 验证，默认关先影子观察误判分布
     MODE_GATE_OOS_REPLY_ENABLED: bool = False
 
+    # ----- Stage 31 主动服务地基（NBA + 活动引导）-----
+    # 主任务完成后是否追加至多一个主动动作（活动提示）。双开关分级：
+    # ENABLED=计算+落决策日志（影子）；APPLY=真实追加进回复。默认双关=零回归。
+    # 抑制矩阵（退款/投诉/确认门/负面情绪/闲聊轮禁营销）见 stage-31 需求第 4 节
+    PROACTIVE_ENABLED: bool = False
+    PROACTIVE_APPLY: bool = False
+    # 活动池 JSON 配置（mtime 缓存自动重载，同 experiments 模式；缺失=无活动）
+    CAMPAIGN_CONFIG_PATH: str = "configs/campaigns.json"
+    # 会话内主动动作上限 / 拒绝后冷却小时数（频控全走 Redis，故障 fail-closed 抑制）
+    PROACTIVE_SESSION_MAX: int = 1
+    PROACTIVE_REJECT_COOLDOWN_HOURS: int = 48
+
     # ----- Stage 27 Meta-classifier 影子模式 -----
     # 影子模式：模型对每轮语义层决策做预测、落决策日志、出分歧率指标，
     # **不驱动任何决策**（合成数据模型不碰生产决策的红线）。

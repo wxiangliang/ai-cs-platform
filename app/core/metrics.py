@@ -74,6 +74,13 @@ DIRECTION_CORRECTION = Counter(
 # 确认门结局：confirmed / denied / modified
 CONFIRM_GATE = Counter("confirm_gate_total", "确认门应答次数", ["outcome"])
 
+# Stage 31 主动服务：action=MENTION_CAMPAIGN/NONE，outcome=
+# applied（真实追加）/shadow（影子只记录）/suppressed（被抑制矩阵/频控拦下）。
+# 抑制原因明细在 decision_log.graph_trace_json.proactive（不进 label）
+PROACTIVE = Counter(
+    "proactive_actions_total", "主动服务动作决策次数", ["action", "outcome"]
+)
+
 # Stage 30 对话模式门：mode=SOCIAL_ONLY/TASK_ONLY/MIXED/OOS（预测），
 # accepted=true 仅 SOCIAL 直通轮（v1 接管范围）；二判降幅看
 # llm_calls_total{purpose="classify"} 对比。多租户不进 label（基数纪律）
@@ -187,6 +194,11 @@ def count_diagnose(outcome: str) -> None:
 def count_direction(kind: str) -> None:
     """记录一次方向纠偏触发（Stage 23，kind=task_denied/soft_confirm）。"""
     DIRECTION_CORRECTION.labels(kind=kind).inc()
+
+
+def count_proactive(action: str, outcome: str) -> None:
+    """记一次主动服务决策（Stage 31）。"""
+    PROACTIVE.labels(action=action, outcome=outcome).inc()
 
 
 def count_mode(mode: str, accepted: bool) -> None:

@@ -1,0 +1,16 @@
+{
+  "name": "ai_customer_service_skill_pack",
+  "version": "1.0.0",
+  "generated_at": "2026-08-05T15:36:00+08:00",
+  "target_architecture": "FastAPI + LangGraph + SetFit + Meta-classifier + Playbook/NBA",
+  "skills": [
+    "new_user_onboarding",
+    "product_discovery",
+    "product_recommendation",
+    "promotion_guide",
+    "purchase_assist",
+    "next_best_action",
+    "response_planner",
+    "customer_journey"
+  ]
+}

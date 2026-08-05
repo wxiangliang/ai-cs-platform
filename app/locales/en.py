@@ -17,6 +17,8 @@ TABLE: dict[str, str] = {
     "csat.ask_handoff": "Your session with our agent has ended. Please rate this service (1-5, 5 is best), or reply \"satisfied\" / \"unsatisfied\".",
     # skill 模板覆盖示范：非默认语言查 skill.<skill_id>.<template_key>
     "skill.aftersale_refund.collect": "Sure, I'll help with the refund. Please share your order number or the phone number used to order.",
+    # Stage 31 proactive service
+    "proactive.campaign_mention": "\nBy the way, {hook}. Feel free to ignore this, or reply \"no recommendations\" to opt out.",
     # Stage 30 conversation mode gate
     "mode.social_resume": "\nYour \"{name}\" request is still in progress — just send the required info to continue.",
     "mode.oos_boundary": "That's outside what I can help with as customer service. I can check orders and shipping, handle returns/refunds, or answer product and policy questions.",

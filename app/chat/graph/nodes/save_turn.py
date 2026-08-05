@@ -290,6 +290,25 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
             if created:
                 reply += t("handoff.repeated_unknown", locale)
 
+    # —— Stage 31 主动服务（默认关）：主任务闭环后至多追加一条活动提示。
+    # 抑制矩阵/频控/拒绝冷却在 decide_proactive 内收口；影子模式只落日志
+    # 不改回复；决策证据进 graph_trace_json.proactive（guardrail 同模式）——
+    proactive = None
+    if settings.PROACTIVE_ENABLED:
+        from app.chat.proactive import decide_proactive
+        from app.core.metrics import count_proactive
+
+        proactive = await decide_proactive(state)
+        if proactive:
+            if proactive.get("applied") and proactive.get("hook"):
+                # hook 是运营写死的确定性文案（含披露），不经 LLM 改写（红线）
+                reply += t("proactive.campaign_mention", locale, hook=proactive["hook"])
+                count_proactive(proactive["action"], "applied")
+            elif proactive.get("action") != "NONE":
+                count_proactive(proactive["action"], "shadow")
+            else:
+                count_proactive("NONE", "suppressed")
+
     # 3. 保存 AI 回复（此时 reply 已定稿；RAG/工具回答附来源与引用）
     ai_metadata = None
     if state.get("answer_source"):
@@ -323,6 +342,7 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
         "retrieval": log_retrieval or None,
         "user_message_id": user_msg.id,
         "latency": latency,
+        "proactive": proactive,
     }
     await decision_logger.save(session, build_log_data(log_state))
 

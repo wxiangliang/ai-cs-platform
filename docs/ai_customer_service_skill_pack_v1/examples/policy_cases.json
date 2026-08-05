@@ -1,0 +1,48 @@
+[
+  {
+    "case": "task_related_guidance",
+    "context": {
+      "intent": "PRODUCT.ASK_PRICE",
+      "active_task": null,
+      "sentiment": "NEUTRAL"
+    },
+    "user": "这款空调多少钱？",
+    "primary_response": "当前价格 3299 元。",
+    "nba": "START_PRODUCT_DISCOVERY",
+    "allowed": true,
+    "reason": "价格回答完成后，可询问房间面积以判断匹数是否合适"
+  },
+  {
+    "case": "refund_suppression",
+    "context": {
+      "intent": "RETURN.REFUND",
+      "active_task": "RETURN.REFUND",
+      "sentiment": "NEGATIVE"
+    },
+    "user": "你们赶紧给我退款",
+    "nba": "MENTION_CAMPAIGN",
+    "allowed": false,
+    "reason": "退款和负面情绪抑制营销"
+  },
+  {
+    "case": "social_only_suppression",
+    "context": {
+      "conversation_mode": "SOCIAL_ONLY",
+      "recent_product_context": null
+    },
+    "user": "今天好累",
+    "nba": "MENTION_CAMPAIGN",
+    "allowed": false,
+    "reason": "无相关商品上下文"
+  },
+  {
+    "case": "selection_help",
+    "context": {
+      "intent": "PRODUCT.SELECTION_HELP"
+    },
+    "user": "我不知道选哪一款",
+    "nba": "START_PRODUCT_DISCOVERY",
+    "allowed": true,
+    "reason": "用户主动提出选品需求"
+  }
+]
