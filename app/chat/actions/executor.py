@@ -116,7 +116,10 @@ class ActionExecutor:
 
         # —— 调用写工具（唯一入口）——
         provider = get_tool_provider()
-        params = {**slots}
+        # 端到端幂等契约（生产就绪审计 2026-08-05）：task_id 作为幂等键随写操作
+        # 下发——外部系统按此键去重，「我方超时但对方已提交」的重试不产生重复
+        # 业务动作（对接契约见 stage-11 文档第 6 节；mock 端天然确定性）
+        params = {**slots, "idempotency_key": task_id}
         result: ToolResult = await provider.invoke(action.action_id, params, tenant_id=tenant_id)
 
         # —— 审计落库（主事务）——
