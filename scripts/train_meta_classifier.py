@@ -29,6 +29,8 @@ from typing import Any
 
 # 泄漏黑名单：llm_review_expected 与 SEND_TO_LLM 标签 100% 同向（标签改写）；
 # message 去重后仅 1273 条、单条重复至 200 次（文本特征必背标签）；
+# policy/reviewed/shadow_*/hindsight_* 为真实回流导出的标签侧/审核参考列
+# （shadow_decision 是上一版模型的预测——进特征=模型自我蒸馏）；
 # 其余为生成元数据 / 标签侧 / 域过滤字段
 FORBIDDEN_COLUMNS = frozenset(
     {
@@ -36,6 +38,8 @@ FORBIDDEN_COLUMNS = frozenset(
         "control_result", "llm_review_expected", "feature_source", "notes",
         "sample_weight", "target_decision", "target_intent", "target_domain",
         "target_risk_level", "target_priority",
+        "policy_decision", "reviewed_decision", "shadow_decision", "shadow_agree",
+        "hindsight_signal", "hindsight_tier",
     }
 )
 
@@ -54,6 +58,10 @@ ALL_FEATURES = CATEGORICAL_FEATURES + BOOLEAN_FEATURES + NUMERIC_FEATURES
 
 LABEL_COLUMN = "target_decision"
 WEIGHT_COLUMN = "sample_weight"
+
+# 人工审核标签的训练权重倍数：人工确认（含维持原判的显式确认）比链路
+# 弱标签可信——标签优先级 reviewed > policy 的软实现（硬实现=--reviewed-only）
+REVIEWED_WEIGHT = 2.0
 
 # 部署域 6 类（control_result==NONE 时数据中恰好只出现这 6 类，契约测试锁定）
 DEPLOY_CLASSES = frozenset(
@@ -91,6 +99,26 @@ def load_rows(path: Path, scope: str) -> list[dict[str, str]]:
     if scope == "deploy":
         rows = [r for r in rows if r["control_result"] == "NONE"]
     return rows
+
+
+def resolve_labels(rows: list[dict[str, str]]) -> int:
+    """标签优先级解析（2026-08-05 评审纪律）：人工审核标签 > 链路弱标签。
+
+    reviewed_decision 非空的行：训练标签改用人工判定，sample_weight 乘
+    REVIEWED_WEIGHT（人工确认的样本更可信）。弱标签行原样保留——不改标
+    直接训=克隆现有阈值策略，reviewed 行占比是「模型能否超越老师」的上限。
+    hindsight 信号只排审核优先级，**永不在此转成标签**（转人工/低分不等于
+    该轮决策错误）。合成集无 reviewed_decision 列，全部走弱标签路径。
+    返回 reviewed 行数。
+    """
+    reviewed = 0
+    for r in rows:
+        label = (r.get("reviewed_decision") or "").strip()
+        if label:
+            r[LABEL_COLUMN] = label
+            r[WEIGHT_COLUMN] = str(float(r.get(WEIGHT_COLUMN) or 1.0) * REVIEWED_WEIGHT)
+            reviewed += 1
+    return reviewed
 
 
 def build_frame(rows: list[dict[str, str]]):
@@ -277,6 +305,11 @@ def main() -> None:
         help="deploy=control_result==NONE 6 类（默认）；full=11 类诊断",
     )
     parser.add_argument("--models", default="lr,tree,lgbm,xgb")
+    parser.add_argument(
+        "--reviewed-only", action="store_true",
+        help="只用人工审核过的行训练（reviewed_decision 非空）——"
+        "「未审核的行别直接进训练」纪律的硬执行，数据量够时建议开启",
+    )
     args = parser.parse_args()
 
     from sklearn.metrics import accuracy_score, classification_report, f1_score
@@ -286,6 +319,10 @@ def main() -> None:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = load_rows(Path(args.data), args.scope)
+    reviewed = resolve_labels(rows)
+    if args.reviewed_only:
+        rows = [r for r in rows if (r.get("reviewed_decision") or "").strip()]
+        assert rows, "--reviewed-only 但没有任何 reviewed_decision 非空的行"
     splits = {
         s: [r for r in rows if r["split"] == s] for s in ("train", "validation", "test")
     }
@@ -293,6 +330,13 @@ def main() -> None:
         f"scope={args.scope} rows={len(rows)} "
         f"(train={len(splits['train'])}/val={len(splits['validation'])}/test={len(splits['test'])})"
     )
+    if reviewed:
+        print(
+            f"标签来源：人工审核 {reviewed} 行（×{REVIEWED_WEIGHT} 加权）"
+            f" / 弱标签 {len(rows) - reviewed if not args.reviewed_only else 0} 行"
+        )
+    elif "reviewed_decision" in (rows[0] if rows else {}):
+        print("⚠ 真实回流数据但 0 行人工审核——不改标直接训=克隆现有阈值策略（操作文档 7.2）")
     if args.scope == "deploy":
         labels = {r[LABEL_COLUMN] for r in rows}
         assert labels <= DEPLOY_CLASSES, f"部署域出现意外标签: {labels - DEPLOY_CLASSES}"

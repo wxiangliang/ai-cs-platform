@@ -139,10 +139,37 @@ target_* / sample_weight / feature_source / control_result —— 标签侧与�
   当前挂的是合成数据模型：分歧率数字仅验证管线，正式影子评估
   待真实特征表重训后进行；
 阶段 B 阈值接管（未实施）：
-  真实重训 + 分歧分析达标后，_switch_evidence_sufficient / margin 路由的
+  真实重训 + 下述门禁全过后，_switch_evidence_sufficient / margin 路由的
   硬阈值替换为 Meta 概率 + 安全约束（L3 确认门、pending slot 不可跳过、
   写操作不直通——全部结构性保留）；
 回滚：META_SHADOW_ENABLED=false 关影子；接管期另设开关，默认关。
+```
+
+**接管门禁清单**（2026-08-05 评审固化——「分歧率达标」不够，上线前逐项过，
+全过才允许进入分级接管；任一项不过就继续影子攒数据）：
+
+| # | 门禁 | 口径 |
+|---|---|---|
+| 1 | 人工审核标签量达标 | reviewed_decision 行 ≥ 2000，且高风险类（SWITCH_NEW / CONTINUE_CURRENT）各 ≥ 300 |
+| 2 | 时间切分评估通过 | `export --split-by time`（旧训新测）指标不比 session 切分显著退化——防表达/分布漂移下的虚高 |
+| 3 | SWITCH_NEW precision 不低于当前策略 | 对照口径 = `map_actual_decision`；误切是最高代价错误（×5） |
+| 4 | cost_weighted_error 显著低于当前策略 | 同一 test 集上模型 vs 链路实际决策对比 |
+| 5 | 任务完成率 / 转人工率不劣化 | quality_daily 按影子分歧会话切分对照 |
+| 6 | 高风险写意图误接受率不升 | L3 域（AFTERSALE/ORDER/PAYMENT）分层单看 |
+| 7 | LLM 调用量在预算内 | SEND_TO_LLM 预测占比 vs 当前 llm 二判占比 |
+| 8 | 概率完成校准 | isotonic/Platt（遗留 4）——confidence 用于阈值的前提 |
+| 9 | 分层无严重退化 | 按租户 × 意图域 × 对话状态分层，任一层 cost 退化 >20% 即不过 |
+| 10 | 灰度开关 + 回滚演练完成 | 接管开关默认关、一键回阈值路径实测过 |
+
+**分级接管顺序**（每级观察 1-2 周、门禁 3-7 复查通过再进下一级；
+SWITCH/CONTINUE 直接改写任务上下文、错误代价最高，所以放最后）：
+
+```text
+级 0  影子（现状，只记录）
+级 1  只接管 SEND_TO_LLM     —— 错了代价=多花一次 LLM（×1），最安全的试点
+级 2  接管 ASK_CLARIFICATION / UNKNOWN —— 错了代价=多问一句
+级 3  接管 ACCEPT_NEW_INTENT —— 仅 IDLE 态开任务，无进行中上下文可吞
+级 4  接管 SWITCH_NEW / CONTINUE_CURRENT —— 最后：误切×5 / 误吞×3 的高危决策
 ```
 
 实际决策对照口径（`map_actual_decision`，分歧率 SQL 引用时以代码注释为准）：
@@ -199,9 +226,23 @@ ACCEPT_NEW_INTENT。UNKNOWN 与 ASK_CLARIFICATION 的边界为近似（链路里
    （不依赖模型产物——采集与预测独立降级，上线第一天起即积累训练数据）；
    `scripts/export_meta_training_set.py` 导出训练契约 CSV（session md5
    分桶组安全、影子分歧行加权 1.5 优先人工审核、导出列==训练白名单
-   契约防漂移测试）；
+   契约防漂移测试）。**2026-08-05 标签/评估纪律加固**：三列标签
+   （policy_decision 链路事实不可改 / reviewed_decision 人工审核专用列，
+   维持原判也显式填写 / target_decision 训练标签，训练侧 reviewed 优先
+   ×2 加权 + `--reviewed-only` 硬执行）；hindsight_tier 证据分级
+   （task_deny=强、低分/差评=中、仅转人工=弱——后见信号只排审核优先级
+   永不直接当真值）；`--split-by time` 整会话时间切分（旧训新测，
+   接管门禁 2 的评估口径）；
 2. has_business_object 运行时特征实现（当前为近似启发式）；
 3. 分歧率看板（指标 meta_shadow_total 已有，Grafana 面板待加）；
 4. 概率校准（合成数据上无意义，真实数据后 isotonic/Platt）；
 5. 类别新增（意图码扩表）时的特征契约版本管理；
-6. 人工审核标注工具/流程（当前为 CSV 改标）。
+6. 人工审核标注工具/流程（当前为 CSV 改标）；
+7. **模型结构备选**（真实混淆矩阵出来后再决策，不提前复杂化）：若六分类
+   在 SWITCH/CONTINUE 上精度不足，考虑两阶段拆分——模型 A 判「当前语义
+   结果可否直接信任」（ACCEPT/UNCERTAIN），模型 B 判不确定时的处置
+   （CONTINUE/SWITCH/LLM/CLARIFY/UNKNOWN）；类别不平衡下两阶段通常更容易
+   拿到高精度的切换判断。v1 维持六分类；
+8. split 维度扩展：时间切分已实现（`--split-by time`）；按用户/客户维度
+   分组（同一客户跨 session 的重复话术泄漏）需 join chat_session.user_id，
+   真实流量后按需加。

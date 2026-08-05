@@ -240,6 +240,10 @@ def test_export_row_matches_training_contract():
     assert row["target_decision"] == "SWITCH_NEW"
     assert row["sample_weight"] == 1.5  # 分歧样本加权（难例）
     assert row["case_family_id"] == "session:s-001"
+    # 三列标签纪律：policy=链路事实（不可改）、target 初始=policy（弱标签）、
+    # reviewed 留白待人工（维持原判也要显式填写，与未审核可区分）
+    assert row["policy_decision"] == "SWITCH_NEW" == row["target_decision"]
+    assert row["reviewed_decision"] == ""
 
 
 def test_export_split_group_safe():
@@ -248,6 +252,41 @@ def test_export_split_group_safe():
     for sid in ("s-001", "s-002", "abc"):
         assert ex._split_for_session(sid) == ex._split_for_session(sid)
         assert ex._split_for_session(sid) in {"train", "validation", "test"}
+
+
+def test_hindsight_tier_grading():
+    """后见信号证据分级：task_deny=强（用户明确纠错）＞低分/差评=中＞
+    仅转人工=弱（归因不确定，绝不直接当「决策错误」真值）。"""
+    ex = _load_export_script()
+    assert ex.hindsight_tier("") == ""
+    assert ex.hindsight_tier("task_deny") == "strong"
+    assert ex.hindsight_tier("task_deny,handoff,low_csat,feedback_down") == "strong"
+    assert ex.hindsight_tier("handoff,low_csat") == "medium"
+    assert ex.hindsight_tier("feedback_down") == "medium"
+    assert ex.hindsight_tier("handoff") == "weak"
+
+
+def test_split_by_time_group_safe_and_chronological():
+    """时间切分：整会话粒度（组安全）+ 时间序单调（旧会话 train、新会话 test）。"""
+    ex = _load_export_script()
+    sessions = [f"s-{i:03d}" for i in range(100)]
+    mapping = ex._split_by_time(sessions)
+    rank = {"train": 0, "validation": 1, "test": 2}
+    order = [rank[mapping[s]] for s in sessions]
+    assert order == sorted(order)  # 时间上单调：不会新数据混进 train
+    assert order.count(0) == 80 and order.count(1) == 10 and order.count(2) == 10
+    assert ex._split_by_time([]) == {}
+
+
+def test_export_row_split_override():
+    """时间切分模式下 build_export_row 用调用方 split，不落回 md5 分桶。"""
+    ex = _load_export_script()
+    features = meta_shadow.build_features(_state(), _state()["intent_result"])
+    row = ex.build_export_row(
+        1, "s-001", "m", {"features": features, "actual": "SWITCH_NEW"}, split="test"
+    )
+    assert row is not None
+    assert row["split"] == "test"
 
 
 def test_hindsight_signal_composition():

@@ -11,7 +11,7 @@
 
 聊天链路里有两类完全不同的「分类」：
 
-| | 意图分类器（SetFit） | **Meta-classifier（本文档）** |
+| | 意图分类器（SetFit，训练见 `setfit_training.md`） | **Meta-classifier（本文档）** |
 |---|---|---|
 | 回答的问题 | 这句话是什么业务意图？ | **对当前任务该做什么操作？** |
 | 输入 | 消息文本 | 表格特征：对话状态 + 任务上下文 + 槽位信号 + SetFit TopK/margin |
@@ -110,28 +110,45 @@ tree_rules.txt      # 浅决策树文本规则（规则发现用，不上线）
 # 导出近 30 天真实特征表（与合成集同契约，可直接喂训练脚本）
 uv run python scripts/export_meta_training_set.py --tenant t1 --days 30
 
-# 人工审核改标 target_decision 后重训
+# 接管评估用时间切分（整会话粒度：旧 80% 会话训练、新 20% 验证/测试——
+# 更接近真实上线效果，能暴露意图分布/表达漂移；接管门禁 2 的口径）
+uv run python scripts/export_meta_training_set.py --tenant t1 --days 90 --split-by time
+
+# 人工审核（填 reviewed_decision 列）后重训
 uv run python scripts/train_meta_classifier.py --data data/export/meta_train_t1_<date>.csv
 ```
 
-导出口径：split 按 session md5 分桶（80/10/10，同会话同桶=组安全）；
-`target_decision` 默认是链路实际决策（**弱标签**——冷启动时就是
-Stage 26 阈值的决策，不改标直接训=克隆老师连错误一起学）；
-message 列已脱敏、仅供审核。契约防漂移：tests/stage27 断言导出
-特征列 == 训练白名单。
+导出口径：split 默认按 session md5 分桶（80/10/10，同会话同桶=组安全），
+`--split-by time` 为整会话时间切分；message 列已脱敏、仅供审核。
+契约防漂移：tests/stage27 断言导出特征列 == 训练白名单。
 
-**审核优先级**（`hindsight_signal` 列——系统事后自证决策错误的证据）：
+**三列标签**（防「模型只学会复制现有规则」——把当时做了什么、应该做什么、
+后来发生了什么分开存）：
+
+| 列 | 含义 | 谁写 |
+|---|---|---|
+| `policy_decision` | 链路当时实际做了什么（行为日志，**不可改**——审核后仍保留，供「策略 vs 人工」对比与审核覆盖率统计） | 导出脚本 |
+| `reviewed_decision` | 人工认为应该做什么（**审核只填这一列**；认为链路判对了也把原值填进来=显式确认，与未审核行区分开） | 人工审核 |
+| `target_decision` | 训练标签列（与合成集契约兼容），导出时初始=policy；训练脚本自动取 reviewed > target，reviewed 行 ×2 加权 | 自动 |
+| `hindsight_signal` / `hindsight_tier` | 后来发生了什么（outcome，只排审核优先级，**永不当真值**） | 导出脚本 |
+
+**审核优先级**（按 `hindsight_tier` 分级——后见信号是「该轮决策事后被
+证伪的概率」排序器，不是判决书：转人工可能是工具失败/回复质量差/用户
+坚持转人工，**不等于该轮意图决策错了**）：
 
 | 优先级 | 筛选条件 | 含义 |
 |---|---|---|
-| 1 | `hindsight_signal` 非空 | 该轮之后同会话出现任务中途否定（task_deny→之前开的任务大概率错）/转人工（handoff）；或会话结局差（low_csat≤2 / feedback_down） |
-| 2 | `shadow_agree=False` | 影子模型与链路阈值分歧，信息量最大（自动加权 1.5） |
-| 3 | 其余 | 抽检 |
+| 1 | `hindsight_tier=strong` | task_deny：该轮之后同会话出现任务中途否定=用户明确纠错，之前开的任务大概率错 |
+| 2 | `hindsight_tier=medium` | low_csat≤2 / feedback_down：会话结局差的间接证据 |
+| 3 | `shadow_agree=False` | 影子模型与链路阈值分歧，信息量最大（自动加权 1.5） |
+| 4 | `hindsight_tier=weak` | 仅 handoff（转人工）：归因高度不确定 |
+| 5 | 其余 | 抽检 |
 
 注意：特征快照（decision_log 记录）是不可改的审计事实——哪怕状态
 本身是上游误判「错出来的」，它也是模型推理时会真实面对的输入分布；
-**人工修正的对象只有 target_decision 标签**（在导出 CSV 里改）。
-未经审核的行不要直接进训练。
+**人工修正的对象只有 reviewed_decision 一列**（在导出 CSV 里填）。
+未经审核的行不要直接进训练——数据量够后用
+`train_meta_classifier.py --reviewed-only` 硬执行该纪律。
 
 维护约定：特征白名单/黑名单以 `scripts/train_meta_classifier.py` 顶部
 常量为准（单一事实来源），改动需同步 tests/stage27 契约测试与本文档第 2 节。
@@ -173,9 +190,9 @@ Stage 26 手调阈值」的差异，用于验证管线与积累对照样本；�
 完整闭环一图流：
 
 ```text
-① 导出          ② 审核改标         ③ 重训            ④ 生效观察
-export_meta_ →  改 CSV 的      →  train_meta_    →  重启服务（影子懒加载）
-training_set    target_decision    classifier         → 看分歧率指标/SQL
+① 导出          ② 审核标注         ③ 重训            ④ 生效观察
+export_meta_ →  填 CSV 的      →  train_meta_    →  重启服务（影子懒加载）
+training_set    reviewed_decision  classifier         → 看分歧率指标/SQL
 （建议 2-4 周一次；早期数据少可放宽到量够 2000+ 行再训）
 ```
 
@@ -183,18 +200,19 @@ training_set    target_decision    classifier         → 看分歧率指标/SQL
 
 ```bash
 uv run python scripts/export_meta_training_set.py --tenant t1 --days 30
-# 输出示例：导出 3210 行 → data/export/meta_train_t1_20261015.csv
-#          （后见信号 87 行【最优先审】，影子分歧 214 行【其次】）
+# 输出示例：导出 3210 行 → data/export/meta_train_t1_20261015.csv（split=session）
+# 审核优先级：hindsight strong 23 行 > medium 64 行 > 影子分歧 214 行 > weak 41 行 > 其余抽检
 ```
 
-### 7.2 第二步：审核改标（核心步骤，不可省）
+### 7.2 第二步：审核标注（核心步骤，不可省）
 
 用 Excel/WPS/Numbers 打开导出的 CSV（UTF-8 编码；WPS 若乱码选
-「数据→导入文本→UTF-8」）。**只允许改 `target_decision` 一列**，
-其他列一律不动（特征列是运行时事实，`sample_weight` 保持默认）。
+「数据→导入文本→UTF-8」）。**只允许填 `reviewed_decision` 一列**，
+其他列一律不动——`policy_decision`/`target_decision` 是链路行为日志，
+保留原值才能事后统计「人工推翻了多少策略决策」；`sample_weight` 保持默认。
 
-审核顺序：先筛 `hindsight_signal` 非空的行，再筛 `shadow_agree=False`
-的行，其余抽检。每行审核只回答一个问题——
+审核顺序：先筛 `hindsight_tier=strong` 的行，再 medium、再
+`shadow_agree=False`，其余抽检（第 5 节优先级表）。每行审核只回答一个问题——
 
 > 看 `message`（用户当时说了什么）+ `current_state`/`active_intent`
 > （系统当时在办什么）：这一轮**正确的决策**应该是下面 6 个里的哪个？
@@ -208,35 +226,45 @@ uv run python scripts/export_meta_training_set.py --tenant t1 --days 30
 | ASK_CLARIFICATION | 在业务范围内但指向不明，该反问 | 「退款和换货有什么区别来着」 |
 | UNKNOWN | 压根不在业务范围（闲聊外/无关问题） | 「你们招不招人」 |
 
-三个典型改标场景：
+三个典型标注场景：
 
 ```text
-例 1（hindsight=task_deny）：补槽中用户问「什么时候能到」，链路判了
-  SWITCH_NEW 切去物流查询，两轮后用户说「不是要查物流」。
-  → 该行 target_decision 从 SWITCH_NEW 改为 SEND_TO_LLM 或
-    ASK_CLARIFICATION（当时就该多问一句，而不是直接切）。
+例 1（hindsight_tier=strong，policy=SWITCH_NEW）：补槽中用户问「什么
+  时候能到」，链路切去物流查询，两轮后用户说「不是要查物流」。
+  → reviewed_decision 填 SEND_TO_LLM 或 ASK_CLARIFICATION
+    （当时就该多问一句，而不是直接切）。
 
-例 2（shadow_agree=False, actual=CONTINUE_CURRENT）：切换守护把
+例 2（shadow_agree=False, policy=CONTINUE_CURRENT）：切换守护把
   「帮我开张发票」拦在了退款任务里追问订单号——message 明显是新诉求。
-  → 改为 SWITCH_NEW（守护拦错了，这正是要教给模型的样本）。
+  → reviewed_decision 填 SWITCH_NEW（守护拦错了，正是要教给模型的样本）。
 
 例 3：看完 message 和上下文，认为链路当时判得没错。
-  → 不改。维持原判也是有效标注，别为改而改。
+  → reviewed_decision 照抄 policy_decision 的值。**维持原判也要填**
+    ——显式确认与未审核是两回事（确认行会 ×2 加权、计入审核覆盖率）。
 ```
 
 改完**另存为 CSV（保持 UTF-8）**，注意别让 Excel 把布尔列的
-True/False 改成 TRUE/FALSE 或 1/0（只改 target_decision 一列就不会碰到）。
+True/False 改成 TRUE/FALSE 或 1/0（只填 reviewed_decision 一列就不会碰到）。
 
 ### 7.3 第三步：重训与验收
 
 ```bash
 uv run python scripts/train_meta_classifier.py --data data/export/meta_train_t1_20261015.csv
+# 审核量攒够后建议只用人工标签训练（硬执行「未审核不进训练」纪律）：
+uv run python scripts/train_meta_classifier.py --data ... --reviewed-only
 ```
 
-看输出对比表（指标含义见第 4 节），验收三条：
+标签自动按优先级取：`reviewed_decision`（人工，×2 加权）>
+`target_decision`（链路弱标签）。开头会打印两者行数——**reviewed 行占比
+就是「模型能否超越现有阈值」的上限**：0 行审核直接训 = 把 Stage 26
+手调规则克隆成 LightGBM，没有意义。
+
+看输出对比表（指标含义见第 4 节），验收四条：
 1. `cost_weighted_error` 和 `false_switch_rate` 是核心，别只看 accuracy；
 2. LightGBM/XGBoost 应赢过 LR——赢不了说明数据还不够，继续攒；
-3. 浅决策树前几个分裂是否符合业务直觉（`tree_rules.txt`）。
+3. 浅决策树前几个分裂是否符合业务直觉（`tree_rules.txt`）；
+4. 接管评估前额外用 `--split-by time` 重导出跑一遍（旧训新测）——
+   指标比 session 切分明显差说明存在分布漂移，session 切分的数字虚高。
 
 ### 7.4 第四步：生效与观察
 
@@ -249,4 +277,8 @@ uv run python scripts/train_meta_classifier.py --data data/export/meta_train_t1_
 ```
 
 分歧率持续走低且分歧样本人工复核多数「模型对、阈值错」时，
-才进入接管评估（stage-27 文档 4.5 阶段 B，需另行开发+开关控制）。
+才进入接管评估——按 stage-27 文档 4.5 阶段 B 的**十条接管门禁**逐项过
+（审核标签量/时间切分评估/SWITCH precision/代价对比/分层无退化/校准/
+回滚演练等），全过后按**分级接管顺序**灰度：先 SEND_TO_LLM（错了只多花
+一次 LLM）、再澄清/UNKNOWN、再 ACCEPT_NEW、最后才是直接改写任务上下文的
+SWITCH/CONTINUE。接管需另行开发+开关控制，默认关。

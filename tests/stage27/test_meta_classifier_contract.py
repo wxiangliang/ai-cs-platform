@@ -49,6 +49,34 @@ def test_known_leaky_columns_are_forbidden():
         assert col in mc.FORBIDDEN_COLUMNS, col
 
 
+def test_review_audit_columns_are_forbidden():
+    """真实回流导出的标签侧/审核参考列必须在黑名单——
+    shadow_decision 是上一版模型的预测（进特征=自我蒸馏），
+    policy/reviewed 是标签列，hindsight 是审核排序信号非特征。"""
+    for col in (
+        "policy_decision", "reviewed_decision", "shadow_decision",
+        "shadow_agree", "hindsight_signal", "hindsight_tier",
+    ):
+        assert col in mc.FORBIDDEN_COLUMNS, col
+
+
+def test_resolve_labels_priority():
+    """标签优先级：人工审核（reviewed_decision）> 链路弱标签（target_decision）；
+    reviewed 行 ×REVIEWED_WEIGHT 加权；合成集无该列走弱标签路径不受影响。"""
+    rows = [
+        {"target_decision": "SWITCH_NEW", "reviewed_decision": "CONTINUE_CURRENT",
+         "sample_weight": "1.5"},
+        {"target_decision": "SWITCH_NEW", "reviewed_decision": "", "sample_weight": "1.0"},
+        {"target_decision": "UNKNOWN"},  # 合成集：无 reviewed_decision 列
+    ]
+    assert mc.resolve_labels(rows) == 1
+    assert rows[0]["target_decision"] == "CONTINUE_CURRENT"  # 人工判定生效
+    assert float(rows[0]["sample_weight"]) == 1.5 * mc.REVIEWED_WEIGHT
+    assert rows[1]["target_decision"] == "SWITCH_NEW"  # 未审核保持弱标签
+    assert rows[1]["sample_weight"] == "1.0"
+    assert rows[2]["target_decision"] == "UNKNOWN"
+
+
 def test_feature_columns_exist_in_data():
     header = next(csv.reader(_DATA.open(encoding="utf-8-sig")))
     for col in mc.ALL_FEATURES:
