@@ -50,6 +50,15 @@ intent_train_v42_project.csv（29 类约 20100 条，训练用这份；可重复
 **数据变更纪律（README 第 5 节）**：不手改 CSV——改 `build_intent_dataset.py`
 的映射规则或生成模板后重建；新增意图先在 taxonomy 注册、每类 ≥300 条。
 
+**阶段 2 预告（Stage 30 后，README 3.5 节）**：Mode Gate 真实流量稳定接管
+闲聊后，业务训练集切 `intent_mode_v43_package/intent_train_v43_project_business.csv`
+（25 类：去掉 CHITCHAT.\*/BOT_IDENTITY/UNKNOWN——闲聊交 Mode Gate、
+UNKNOWN 改推理拒识）。**在此之前不要切**：门默认关，闲聊类砍掉就没人接。
+另注：v43 仍保留 META.ABORT / META.TRANSFER_HUMAN 两个 META 类，与规则
+控制层不冲突——显式确定表达（「算了」「转人工」）由规则层短路，SetFit 里
+保留它们是为覆盖规则未命中的语义变体（「这个流程太麻烦我不办了」→ ABORT、
+「我还是希望找真人处理」→ TRANSFER_HUMAN）与降级兼容路径。
+
 ## 3. 怎么训练
 
 ```bash

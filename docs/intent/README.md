@@ -1,8 +1,12 @@
 # 意图训练数据集说明
 
-> 意图码的单一事实来源是 `docs/chat/intent_taxonomy.md`；本目录管理**训练数据与两份训练操作文档**。
-> 训练 SetFit 看 `setfit_training.md`，训练 Meta-classifier 看 `meta_classifier_training.md`
-> ——两个不同的模型（前者答「什么意图」，后者答「对当前任务做什么操作」）。
+> 单一事实来源分两份：**业务意图**码在 `docs/chat/intent_taxonomy.md`（用户具体
+> 想做什么），**对话模式**在 `docs/chat/conversation_mode_taxonomy.md`（本轮话语
+> 属于哪种交互模式）——模式不是意图，不进意图 taxonomy。
+> 本目录管理训练数据与**三份训练操作文档**，三个模型三条轴：
+> Mode Gate（`mode_gate_training.md`）答「这句是闲聊/业务/混合/OOS」；
+> SetFit（`setfit_training.md`）答「业务部分具体是什么意图」；
+> Meta-classifier（`meta_classifier_training.md`）答「对当前任务续接/切换/澄清/二判」。
 
 ---
 
@@ -11,11 +15,12 @@
 | 文件 | 说明 |
 |---|---|
 | `intent_train_v41_clean_nodup.csv` | 原始数据（19641 行，35 标签，自带 train/val/test 划分）。**只读，不再修改，训练不直接用它** |
-| `intent_train_v42_project.csv` | **项目对齐版（SetFit 训练用这份）**：由 v41 经映射规则清洗 + 补齐 FAQ.GENERAL 生成，标签与 taxonomy v2 完全一致。由 `scripts/build_intent_dataset.py` 生成，可重复构建 |
-| `setfit_training.md` | **SetFit 意图分类器训练操作文档**（Stage 04）：数据来源/训练命令与参数/acc≥0.90 验收门禁/回流合并/重训闭环清单（含 KNN 索引重建红线）；训练脚本 `scripts/train_setfit_intent.py` |
+| `intent_train_v42_project.csv` | 项目对齐版（29 类，由 v41 经映射清洗生成）。**当前线上 SetFit v1 的训练集**；Mode Gate 稳定接管后（阶段 2）转为历史基线与回归对照，业务训练切 v43（见 3.5 节，别提前切） |
+| `setfit_training.md` | **SetFit 意图分类器训练操作文档**（Stage 04）：数据来源/训练命令与参数/acc≥0.90 验收门禁/回流合并/重训闭环清单（含 KNN 索引与 mode head 重训红线）；训练脚本 `scripts/train_setfit_intent.py` |
 | `meta_classifier_training.md` | **Meta-classifier 训练操作文档**（Stage 27）：学的是「对当前任务做什么操作」不是意图；数据在 `data/电商客服_MetaClassifier_合成训练数据_v1.csv`（12501 行合成表格特征）+ 影子回流，训练脚本 `scripts/train_meta_classifier.py` |
 | `mode_gate_training.md` | **Conversation Mode Gate 训练操作文档**（Stage 30）：判「闲聊/业务/混合/OOS」对话模式（第三条轴），共享 SetFit body；训练脚本 `scripts/train_mode_gate.py` |
-| `intent_mode_v43_package/` | **v43 数据包**（2026-08-05）：Mode Gate 四分类数据 `conversation_mode_train_v1.csv`（14400 行）+ v41 全量 mode 标注审计版 + **阶段 2 用**的 25 类业务版 SetFit 数据（Mode Gate 稳定前不要用它重训，stage-30 需求第 7/10 节红线） |
+| `intent_mode_v43_package/` | **v43 数据包**（2026-08-05）：Mode Gate 四分类数据 `conversation_mode_train_v1.csv`（14400 行）+ v41 全量 mode 标注审计版 + **阶段 2 用**的 25 类业务版 SetFit 数据 `intent_train_v43_project_business.csv`（Mode Gate 稳定前不要用它重训，stage-30 需求第 7/10 节红线） |
+| `mode_hard_test_v1.csv` | **Mode Gate 人工 hard test**（40 条全人工编写，禁用生成模板）：合成 test 集 100% 模板族与 train 重叠、分数含模板泛化水分，**阈值标定与验收以本集为准**；训练脚本自动评估并打印错例 |
 
 ## 2. v41 质检结论（2026-07-02）
 
@@ -49,14 +54,41 @@
 **v42 结果：29 个类，约 20100 条**（19541 条映射 + ~600 条 FAQ.GENERAL 生成），
 沿用 v41 的 split 字段（生成样本按 85/7.5/7.5 分配 train/val/test）。
 
-## 4. v42 字段（训练只用这 4 列）
+## 3.5 v42 → v43：业务意图与对话模式解耦（Stage 30，阶段 2 生效）
+
+v43 不改变业务 taxonomy 的含义，而是把「对话模式」和「业务意图」从同一个
+分类空间拆开（双轴，见 `docs/chat/conversation_mode_taxonomy.md`）。
+v42 的 29 类中四类不再进入业务意图 SetFit，去向：
+
+| v42 标签 | v43 处理方式 |
+|---|---|
+| CHITCHAT.GENERAL | Conversation Mode 的 SOCIAL_ONLY 种子数据，交给 Mode Gate |
+| CHITCHAT.THANKS | SOCIAL_ONLY，由闲聊模板/回复器处理 |
+| META.BOT_IDENTITY | 显式身份询问规则层优先；其余归 SOCIAL_ONLY |
+| META.UNKNOWN | **删除训练标签身份**，改为推理阶段拒识结果（阈值/margin/KNN/二判失败后产生，不再让模型学一个「语义杂物桶」） |
+
+产出两份训练集（都在 `intent_mode_v43_package/`）：业务意图
+`intent_train_v43_project_business.csv`（25 类 18384 行，保留原 split）；
+对话模式 `conversation_mode_train_v1.csv`（4 类各 3600 行；UNCERTAIN 是
+推理拒识不是训练标签）。
+
+**⚠ 切换时机红线（stage-30 需求第 10 节）**：当前线上 SetFit v1 仍以 v42
+（29 类）训练——Mode Gate 默认关，闲聊类砍掉后门一关就没人接得住。
+只有 Mode Gate 真实流量稳定接管 SOCIAL_ONLY 后，才执行阶段 2：
+v43 重训 SetFit → 重建 KNN 索引 → 重训 mode head → 评估门禁换 v43 test 集。
+
+## 4. 业务意图训练字段（v42 现行 / v43 阶段 2，同为 4 列）
 
 ```text
-text   : 用户话术
-intent : taxonomy 规范意图码（29 类）
+text   : 用户话术（阶段 2 后：MIXED 复合句由运行时分段器提取业务片段再分类，
+         业务 SetFit 不直接接收完整混合句）
+intent : taxonomy 规范意图码（v42=29 类 / v43=25 类）
 split  : train / val / test
 source : 数据来源（v41 原值 / generated_v42）
 ```
+
+对话模式训练集字段（conversation_mode/source_intent/base_id/
+generation_family/review_status 等 11 列）见 `mode_gate_training.md` 第 1 节。
 
 ## 4.5 多意图与训练数据的关系（2026-07-03 结论）
 
@@ -113,6 +145,14 @@ LLM 二判（有成本）。本功能先查「训练集示例近邻」——用 
 **业务意图低置信永不走此通道**。二判目录里 CHITCHAT.GENERAL 的描述同步
 充实（家常/情绪/生活琐事），有 Key 时二判归类更准。
 长期方案不变：回流真实家常样本 → 标注 → 扩充训练集重训（第 5 节流程）。
+
+**Stage 30 后的定位（2026-08-05）**：本救援在新架构下是**兼容降级路径**，
+不再是主路径——正常链路由 Conversation Mode Gate 在业务 SetFit **之前**
+截流闲聊（`MODE_GATE_ENABLED=true` 时高置信闲聊根本到不了低置信分支）；
+Mode Gate 关闭/产物缺失/指纹不符时回退现状，本救援照常兜底。
+**阶段 2 注意**：SetFit 切 v43 业务版（25 类）后模型不再输出 CHITCHAT.\*，
+`_KNN_CHITCHAT_RESCUE_INTENTS` 分支将成为死代码（top1 永远不是闲聊类），
+届时随阶段 2 清单一并下线——别看到分支不触发以为是 bug。
 
 **LTR 重排的路线**（2026-07-30 评审结论：先不做，前置在攒）：
 

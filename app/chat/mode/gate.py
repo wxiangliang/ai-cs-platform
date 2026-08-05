@@ -17,6 +17,7 @@ UNCERTAIN 是推理拒识状态（分数/margin 不达标），不是训练标�
 拒识轮与 TASK_ONLY/MIXED/OOS 轮 v1 都只随 intent_result 落影子证据。
 """
 
+import hashlib
 import json
 import re
 import threading
@@ -29,6 +30,33 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+
+def body_fingerprint(model_dir: str | Path) -> str | None:
+    """SetFit body 权重指纹（模型依赖契约，2026-08-05 评审采纳）。
+
+    mode head 是在**某一版 body 的向量空间**里训练的；SetFit 重训后
+    向量空间变了，旧 head 仍能执行但预测失真——必须结构性拒绝而不是
+    静默运行。指纹 = 目录下权重文件（*.safetensors/*.bin，排除意图头
+    model_head.pkl——mode head 只依赖 body）的 (相对路径, sha256) 有序摘要。
+    训练脚本与运行时共用本函数保证算法一致。目录/权重缺失返回 None。
+    """
+    base = Path(model_dir)
+    if not base.is_absolute():
+        base = Path(__file__).resolve().parents[3] / base
+    if not base.exists():
+        return None
+    files = sorted(
+        p for p in base.rglob("*")
+        if p.suffix in (".safetensors", ".bin") and p.name != "model_head.pkl"
+    )
+    if not files:
+        return None
+    digest = hashlib.sha256()
+    for p in files:
+        digest.update(str(p.relative_to(base)).encode())
+        digest.update(p.read_bytes())
+    return digest.hexdigest()[:16]
+
 MODE_SOCIAL_ONLY = "SOCIAL_ONLY"
 MODE_TASK_ONLY = "TASK_ONLY"
 MODE_MIXED = "MIXED"
@@ -36,11 +64,15 @@ MODE_OOS = "OOS"
 MODE_UNCERTAIN = "UNCERTAIN"
 
 # 强业务关键词反证：命中任何一个都不允许闲聊直通（覆盖写操作/钱务/投诉/
-# 商品交易核心词——闲聊门的职责边界，不追求全，追求「误吞代价高的词必在」）
+# 商品交易核心词——闲聊门的职责边界，不追求全，追求「误吞代价高的词必在」）。
+# 升级/问题类词（负责人/解决/坏了…）由人工 hard test 补入：
+# 「我要找你们负责人」曾以 0.934 直通（mode_hard_test_v1 实测），
+# 后续误吞样本按 mode_gate_training.md 第 4 节闭环继续补
 _BUSINESS_KEYWORD_RE = re.compile(
     r"退款|退货|退钱|换货|维修|取消|订单|物流|快递|发货|收货|地址|发票|"
     r"投诉|举报|赔偿|理赔|价格|多少钱|优惠|降价|便宜|库存|有货|缺货|"
-    r"下单|购买|支付|付款|账单|扣款|充值|会员|优惠券"
+    r"下单|购买|支付|付款|账单|扣款|充值|会员|优惠券|"
+    r"负责人|经理|主管|人工|售后|解决|坏了|故障|催"
 )
 
 
@@ -71,6 +103,21 @@ class ModeGate:
                     logger.info("mode gate disabled: %s not found", spec_path)
                     return
                 self._spec = json.loads(spec_path.read_text(encoding="utf-8"))
+                # —— 模型依赖契约：训练时的 body 指纹必须与当前 SetFit 权重
+                # 一致，否则拒绝启用（mode head 在旧向量空间训练、收到新 body
+                # 向量仍能执行但结果失真——宁可停用走原流水线）——
+                expected = self._spec.get("body_fingerprint")
+                if expected:
+                    current = body_fingerprint(settings.SETFIT_MODEL_PATH)
+                    if current != expected:
+                        logger.error(
+                            "mode gate disabled: setfit body fingerprint mismatch "
+                            "(head trained on %s, current %s) — retrain: "
+                            "uv run python scripts/train_mode_gate.py",
+                            expected, current,
+                        )
+                        self._spec = None
+                        return
                 import joblib
 
                 self._head = joblib.load(base / "mode_head.joblib")

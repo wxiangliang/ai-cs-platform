@@ -81,6 +81,30 @@ def test_business_counter_evidence_clean_social():
     assert business_counter_evidence("今天天气不错呀") == []
 
 
+def test_counter_evidence_blocks_hard_test_swallows():
+    """hard test 实测误吞样本的回归锁定（mode_gate_training.md 3.5 节）：
+    「我要找你们负责人」曾以 0.934 直通——升级/问题类词补入反证词表后，
+    即使模型伪造高分也必须拦截；干净闲聊不受新词表误伤。"""
+    fake_high = _mode(score=0.99, margin=0.9)
+    for text in ("我要找你们负责人", "上次那个问题还是没解决", "东西坏了怎么办", "帮忙催一下呗"):
+        accepted, codes = evaluate_social(fake_high, text, False)
+        assert not accepted and "business_keyword" in codes, text
+    for text in ("你说话还挺幽默", "哈哈哈笑死我了", "吃了吗您", "好啦不打扰你了拜拜"):
+        assert evaluate_social(fake_high, text, False)[0], text
+
+
+def test_hard_test_contract():
+    """人工 hard test 契约：标签合法、四类齐全、只增不删（≥40 条）。"""
+    import csv
+    from pathlib import Path
+
+    path = Path("docs/intent/mode_hard_test_v1.csv")
+    rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
+    assert len(rows) >= 40
+    labels = {r["conversation_mode"] for r in rows}
+    assert labels == {"SOCIAL_ONLY", "TASK_ONLY", "MIXED", "OOS"}
+
+
 # ---------------- OOS 边界回复（子开关默认关） ----------------
 
 
@@ -108,6 +132,23 @@ def test_gate_fail_open_when_artifacts_missing(tmp_path):
     gate = ModeGate(model_dir=str(tmp_path / "nonexistent"))
     assert not gate.available
     assert gate.predict([0.0] * 8) is None
+
+
+def test_gate_refuses_on_body_fingerprint_mismatch(tmp_path):
+    """模型依赖契约：spec 记录的 body 指纹与当前 SetFit 权重不一致时
+    拒绝启用（mode head 在旧向量空间训练，静默运行=预测失真）。
+    本地有 SetFit 时为「不匹配」、CI 无产物时为「无法校验」，均拒载。"""
+    import json as _json
+
+    import joblib
+
+    (tmp_path / "mode_spec.json").write_text(
+        _json.dumps({"labels": ["SOCIAL_ONLY"], "body_fingerprint": "deadbeef00000000"}),
+        encoding="utf-8",
+    )
+    joblib.dump({"dummy": True}, tmp_path / "mode_head.joblib")
+    gate = ModeGate(model_dir=str(tmp_path))
+    assert not gate.available
 
 
 # ---------------- 双轴纪律与证据落库 ----------------

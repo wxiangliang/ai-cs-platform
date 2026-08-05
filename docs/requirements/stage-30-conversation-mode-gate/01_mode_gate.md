@@ -147,10 +147,15 @@ mode==SOCIAL_ONLY and 无任务      → SOCIAL_RESPOND（纯闲聊回复）
   TASK_ONLY/SOCIAL_ONLY 大部分来自 v42 真实语料映射，**MIXED/OOS 为合成
   冷启动**（`review_status` 标记，离线高分不构成上线依据——与 Meta v1 同纪律）；
 - 训练：`scripts/train_mode_gate.py`——SetFit body 编码（与线上同源表示，
-  红线：**SetFit 重训后 mode head 必须重训**）→ LR 四分类 + Platt 校准 →
-  产物 `models/mode_gate_v1/`（mode_head.joblib / mode_spec.json / metrics.json）；
+  红线：**SetFit 重训后 mode head 必须重训**——已结构性强制：训练时落
+  body 权重指纹进 mode_spec.json，运行时比对不一致拒绝启用）→
+  LR 四分类 + Platt 校准 → 产物 `models/mode_gate_v1/`；
 - 首要指标：`SOCIAL_ONLY precision`（业务误吞必须极低）> OOS P/R >
-  MIXED recall > accuracy；
+  MIXED recall > accuracy；**验收口径 = 人工 hard test**
+  （`docs/intent/mode_hard_test_v1.csv`，40 条禁用生成模板）——合成 test
+  100% 模板族与 train 重叠，0.958 含模板泛化水分，hard test 实测 0.675
+  （MIXED 塌陷方向安全、TASK→SOCIAL 误吞已由反证词表拦截），
+  详见 mode_gate_training.md 3.5 节；
 - `intent_train_v43_project_business.csv`（25 类，去掉 CHITCHAT.*/
   BOT_IDENTITY/UNKNOWN）是**阶段 2 的 SetFit 重训数据，本 Stage 不用**：
   砍掉闲聊类别的 SetFit 必须在 Mode Gate 稳定接管后才能上——否则门一关
@@ -188,7 +193,8 @@ MODE_GATE_OOS_REPLY_ENABLED=false          # OOS 边界回复子开关（影子�
 
 ## 11. 遗留（明确记录）
 
-1. 阈值标定：全部冷启动默认，真实流量后按第 4 节四指标标定；
+1. 阈值标定：全部冷启动默认，真实流量后按第 4 节四指标标定
+   （标定与验收口径 = hard test + 影子数据，不用合成验证集）；
 2. MIXED 主动分段：无并列标记的混合句分段器（真实样本攒够后）；
 3. OOS 回复开启评估：影子期看 OOS 误判分布（尤其 FAQ/商品咨询被误判 OOS）；
 4. MIXED/OOS 合成数据真实化：影子日志回流人工审核替换（与 Meta 同流程）;

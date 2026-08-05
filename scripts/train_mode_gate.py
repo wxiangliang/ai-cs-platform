@@ -25,10 +25,30 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 DATA = Path("docs/intent/intent_mode_v43_package/conversation_mode_train_v1.csv")
+HARD_TEST = Path("docs/intent/mode_hard_test_v1.csv")
 OUT_DIR = Path("models/mode_gate_v1")
 
 MODE_LABELS = {"SOCIAL_ONLY", "TASK_ONLY", "MIXED", "OOS"}
 LABEL_COLUMN = "conversation_mode"
+
+
+def family_overlap_ratio(path: Path) -> float:
+    """test 集模板族与 train 重叠占比（2026-08-05 评审风险量化）。
+
+    实测 82 族中 76 族跨 split：合成 test 与 train 同模板不同填充，
+    离线分数含模板泛化水分——**主评估集分数不构成接管依据**，
+    人工 hard test（禁用生成模板）才是阈值标定与验收的口径。
+    """
+    train_fams, test_fams = set(), set()
+    for r in csv.DictReader(path.open(encoding="utf-8-sig")):
+        fam = r.get("generation_family") or ""
+        if r["split"] == "train":
+            train_fams.add(fam)
+        elif r["split"] == "test":
+            test_fams.add(fam)
+    if not test_fams:
+        return 0.0
+    return len(test_fams & train_fams) / len(test_fams)
 
 
 def load_split(path: Path, split: str) -> tuple[list[str], list[str]]:
@@ -118,6 +138,53 @@ def main() -> None:
             f"R={r.get('recall', 0):.4f} F1={r.get('f1-score', 0):.4f}"
         )
 
+    overlap = family_overlap_ratio(data_path)
+    if overlap > 0.5:
+        print(
+            f"⚠ test 集 {overlap:.0%} 模板族与 train 重叠——上述分数含模板泛化"
+            "水分，验收以下方人工 hard test 为准（mode_gate_training.md 第 3 节）"
+        )
+
+    # —— 人工 hard test（禁用生成模板的对抗集）：模板族泄漏的解毒剂，
+    # 阈值标定与验收以这里为准；文件缺失时跳过并显式提示 ——
+    hard_metrics = None
+    if HARD_TEST.exists():
+        h_texts, h_labels = [], []
+        for r in csv.DictReader(HARD_TEST.open(encoding="utf-8-sig")):
+            assert r[LABEL_COLUMN] in MODE_LABELS, r
+            h_texts.append(r["text"])
+            h_labels.append(r[LABEL_COLUMN])
+        h_preds = list(model.predict(encode(h_texts)))
+        h_report = classification_report(
+            h_labels, h_preds, output_dict=True, zero_division=0
+        )
+        h_social = h_report.get("SOCIAL_ONLY", {})
+        print(
+            f"\n—— 人工 hard test（{len(h_labels)} 条，验收口径）——\n"
+            f"accuracy={accuracy_score(h_labels, h_preds):.4f} "
+            f"SOCIAL_ONLY P={h_social.get('precision', 0):.4f} "
+            f"R={h_social.get('recall', 0):.4f}"
+        )
+        wrong = [
+            (t, y, p) for t, y, p in zip(h_texts, h_labels, h_preds) if y != p
+        ]
+        for t, y, p in wrong:
+            print(f"  ✗ {t!r} 真值={y} 预测={p}")
+        hard_metrics = {
+            "size": len(h_labels),
+            "accuracy": round(accuracy_score(h_labels, h_preds), 4),
+            "per_class": {
+                k: {m: round(v[m], 4) for m in ("precision", "recall", "f1-score")}
+                for k, v in h_report.items()
+                if k in MODE_LABELS
+            },
+            "errors": [{"text": t, "true": y, "pred": p} for t, y, p in wrong],
+        }
+    else:
+        print(f"[warn] 人工 hard test 不存在（{HARD_TEST}），跳过——不代表通过")
+
+    from app.chat.mode.gate import body_fingerprint
+
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, out_dir / "mode_head.joblib")
@@ -127,6 +194,11 @@ def main() -> None:
                 "labels": labels_sorted,
                 "data": str(data_path),
                 "embedding_source": setfit_intent_model._model_path,  # noqa: SLF001
+                # 模型依赖契约：运行时校验当前 SetFit body 权重与训练时一致，
+                # 不一致拒绝启用（body 变了向量空间就变了，头必须重训）
+                "body_fingerprint": body_fingerprint(
+                    setfit_intent_model._model_path  # noqa: SLF001
+                ),
                 "calibration": calibrated,
                 "train_size": len(yt),
             },
@@ -147,6 +219,8 @@ def main() -> None:
                     if k in MODE_LABELS
                 },
                 "confusion_matrix": {"labels": labels_sorted, "matrix": cm},
+                "template_family_overlap": round(overlap, 4),
+                "hard_test": hard_metrics,
             },
             ensure_ascii=False,
             indent=2,
