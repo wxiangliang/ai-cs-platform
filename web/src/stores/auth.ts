@@ -14,16 +14,19 @@ interface Credentials {
   tenantId: string;
   userId: string;
   apiKey: string;
+  /** 管理令牌（开发模式 X-KB-Admin-Token；观测/坐席/知识库等 admin 面用） */
+  adminToken: string;
 }
 
 function load(): Credentials {
+  const empty: Credentials = { tenantId: "", userId: "", apiKey: "", adminToken: "" };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { tenantId: "", userId: "", apiKey: "", ...JSON.parse(raw) };
+    if (raw) return { ...empty, ...JSON.parse(raw) };
   } catch {
     /* 损坏即忽略 */
   }
-  return { tenantId: "", userId: "", apiKey: "" };
+  return empty;
 }
 
 export const useAuthStore = defineStore("auth", {
@@ -43,15 +46,22 @@ export const useAuthStore = defineStore("auth", {
       this.tenantId = cred.tenantId.trim();
       this.userId = cred.userId.trim();
       this.apiKey = cred.apiKey.trim();
+      this.adminToken = cred.adminToken.trim();
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ tenantId: this.tenantId, userId: this.userId, apiKey: this.apiKey }),
+        JSON.stringify({
+          tenantId: this.tenantId,
+          userId: this.userId,
+          apiKey: this.apiKey,
+          adminToken: this.adminToken,
+        }),
       );
     },
     logout() {
       this.tenantId = "";
       this.userId = "";
       this.apiKey = "";
+      this.adminToken = "";
       this.connected = false;
       localStorage.removeItem(STORAGE_KEY);
     },

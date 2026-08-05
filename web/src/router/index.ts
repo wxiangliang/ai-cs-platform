@@ -21,6 +21,18 @@ export const menuRoutes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: "/observe",
+    meta: { title: "观测分析", icon: "DataAnalysis" },
+    children: [
+      {
+        path: "sessions",
+        name: "observe-sessions",
+        component: () => import("@/views/observe/SessionExplorer.vue"),
+        meta: { title: "会话记录" },
+      },
+    ],
+  },
+  {
     path: "/handoff",
     meta: { title: "人工坐席", icon: "Service" },
     children: [

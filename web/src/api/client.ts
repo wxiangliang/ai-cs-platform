@@ -33,6 +33,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...(init.headers as Record<string, string> | undefined),
   };
   if (auth.apiKey) headers["Authorization"] = `Bearer ${auth.apiKey}`;
+  // 管理面（观测/坐席/知识库）开发模式令牌；鉴权模式由 admin scope Key 承担
+  if (auth.adminToken) headers["X-KB-Admin-Token"] = auth.adminToken;
 
   const resp = await fetch(path, { ...init, headers });
 

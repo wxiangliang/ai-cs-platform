@@ -32,6 +32,25 @@ class ChatSessionRepository(BaseRepository[ChatSession]):
         )
         return await self._all(session, stmt)
 
+    async def list_by_tenant(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+        *,
+        user_id: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[ChatSession]:
+        """租户维度会话列表（观测面，Stage 29）：可按用户/状态过滤，更新时间倒序。"""
+        stmt = select(ChatSession).where(ChatSession.tenant_id == tenant_id)
+        if user_id:
+            stmt = stmt.where(ChatSession.user_id == user_id)
+        if status:
+            stmt = stmt.where(ChatSession.status == status)
+        stmt = stmt.order_by(ChatSession.updated_at.desc()).limit(limit).offset(offset)
+        return await self._all(session, stmt)
+
     async def merge_metadata(
         self,
         session: AsyncSession,

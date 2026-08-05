@@ -31,6 +31,7 @@ VITE_API_TARGET=http://192.168.1.10:8000 npm run dev
 | 租户 ID | 必填，如 `t1` | 填写但后端以凭证解析为准 |
 | 用户 ID | 必填，任意测试标识 | 必填 |
 | API Key | **留空** | `ak_xxx.sk_yyy`（`scripts/manage_api_keys.py` 生成，chat scope） |
+| 管理令牌（选填） | 后端 `KB_ADMIN_TOKEN` 同值——**观测分析/坐席/知识库页需要** | 留空（admin scope Key 承担） |
 
 ## 2. WebSocket 实时通道
 

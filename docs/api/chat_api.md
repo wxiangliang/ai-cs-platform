@@ -234,3 +234,20 @@ data: {"code": "SESSION_NOT_FOUND", "message": "会话不存在"}
 {"type": "ticket_created", "ticket_id": "...", "session_id": "...", "reason": "...", "source_intent": "..."}
 {"type": "user_message",   "session_id": "...", "message_id": "...", "content": "..."}
 ```
+
+---
+
+## 9. 观测查询 API（Stage 29 批 1，✅ 已实现）
+
+会话记录与决策日志的页面化查询（Web 控制台「观测分析→会话记录」消费）。
+**全部只读 + admin scope**（鉴权开启用 admin Key；开发模式 `X-KB-Admin-Token`）；
+决策日志/工具审计落库前已脱敏（Stage 13），本组接口原样透出。
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/observe/sessions` | 会话列表：`tenant_id`/`user_id`/`status` 过滤，`limit`(≤100)/`offset` 分页，更新时间倒序，返回 `{sessions, has_more}` |
+| `GET /api/observe/sessions/{id}/messages` | 消息流（admin 视角免 user_id），时间正序 |
+| `GET /api/observe/sessions/{id}/decisions` | 逐轮决策日志：intent_result（含 margin/pending_fill/example_knn）、graph_trace（含 guardrail/meta_shadow）、retrieval/experiment/latency/error 全量 JSON——`replay_trace.py` 的页面化替代 |
+| `GET /api/observe/sessions/{id}/tool-calls` | 工具调用审计（mock/MCP/诊断 agent 同表同口径） |
+
+会话不存在/跨租户统一 404（不暴露存在性）。

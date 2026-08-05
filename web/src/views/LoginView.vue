@@ -19,6 +19,14 @@
             placeholder="ak_xxx.sk_yyy；后端开发模式（AUTH_ENABLED=false）可留空"
           />
         </el-form-item>
+        <el-form-item label="管理令牌（选填）">
+          <el-input
+            v-model="form.adminToken"
+            type="password"
+            show-password
+            placeholder="后端 KB_ADMIN_TOKEN；观测分析/坐席/知识库页需要"
+          />
+        </el-form-item>
         <el-button
           type="primary"
           class="login-btn"
@@ -48,7 +56,12 @@ import { useAuthStore } from "@/stores/auth";
 const auth = useAuthStore();
 const router = useRouter();
 const connecting = ref(false);
-const form = reactive({ tenantId: auth.tenantId || "t1", userId: auth.userId, apiKey: auth.apiKey });
+const form = reactive({
+  tenantId: auth.tenantId || "t1",
+  userId: auth.userId,
+  apiKey: auth.apiKey,
+  adminToken: auth.adminToken,
+});
 
 async function connect() {
   if (!form.tenantId.trim() || !form.userId.trim()) {
@@ -62,7 +75,12 @@ async function connect() {
       ElMessage.error("后端连接失败：请确认服务已启动（uv run uvicorn app.main:app）");
       return;
     }
-    auth.save({ tenantId: form.tenantId, userId: form.userId, apiKey: form.apiKey });
+    auth.save({
+      tenantId: form.tenantId,
+      userId: form.userId,
+      apiKey: form.apiKey,
+      adminToken: form.adminToken,
+    });
     auth.connected = true;
     ElMessage.success("已连接");
     router.push("/");
