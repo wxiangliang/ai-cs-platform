@@ -44,3 +44,14 @@ def test_registry_and_skill_md_two_way_coverage():
     assert md_intents - registry_intents == {"META.SLOT_ONLY", "META.CORRECTION"}, (
         f"md 例外集合漂移：{sorted(md_intents - registry_intents)}"
     )
+
+
+def test_capabilities_subdir_not_loaded():
+    """skills/capabilities/ 是能力规格（无 front-matter），loader glob
+    非递归天然不加载——本测试防止未来有人把 glob 改成递归。"""
+    from app.chat.skills.loader import SKILLS_DIR, load_skill_declarations
+
+    assert (SKILLS_DIR / "capabilities").is_dir()
+    decls = load_skill_declarations()
+    assert not any("next_best_action" in key.lower() for key in decls)
+    assert not any("customer_journey" in key.lower() for key in decls)

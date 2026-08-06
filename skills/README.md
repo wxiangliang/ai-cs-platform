@@ -1,10 +1,14 @@
 # skills/ —— 运行时技能声明目录
 
-> **这是运行时配置不是文档**：Skill Loader 启动时读本目录全部 `*.md` 的
-> YAML front-matter，把能力声明（工具/动作/约束/风险等级/优先级）合并进
-> 代码注册表（`app/chat/skills/registry.py`）。字段规范见
+> **这是运行时配置不是文档**：Skill Loader 启动时读本目录**根层** `*.md`
+> 的 YAML front-matter（glob 非递归，README 与子目录不加载），把能力声明
+> （工具/动作/约束/风险等级/优先级）合并进代码注册表
+> （`app/chat/skills/registry.py`）。字段规范见
 > `docs/chat/skills_design/00_skill_schema.md`；意图码单一事实来源是
 > `docs/chat/intent_taxonomy.md`。
+>
+> 子目录 `capabilities/`：**能力规格**（策略轴/机制类，非意图技能，
+> 不被加载）——设计规格与落点对照见 `capabilities/README.md`。
 
 ## 1. 双源分工（谁管什么）
 
@@ -25,10 +29,10 @@
 - 新增意图三步：taxonomy 注册 → registry 加条目（模板/槽位）→
   本目录加同名 md（能力声明）。缺任何一步守护测试报错。
 
-## 3. Skill Pack 八能力的落点对照（2026-08-05 统一说明）
+## 3. Skill Pack 八能力的落点对照（2026-08-05 统一说明；规格 2026-08-06 迁入 `capabilities/`）
 
-`docs/ai_customer_service_skill_pack_v1/skills/` 里的 8 个「skill」是
-**能力规格**，不是本目录意义上的意图技能。实现时按三轴纪律归位——
+`capabilities/` 里的 8 个规格（原 skill pack skills/）是**能力规格**，
+不是本目录根层意义上的意图技能。实现时按三轴纪律归位——
 **只有「用户意图」进本目录**，系统主动动作与回复组装是策略轴/机制，
 刻意不做成意图（红线：系统动作≠用户意图，训练成意图会污染分类器）：
 

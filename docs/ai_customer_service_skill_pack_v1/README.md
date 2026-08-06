@@ -70,7 +70,9 @@ Business Policy / Next Best Action
 
 ## 5. 目录说明
 
-- `skills/`：给产品、架构评审和开发看的完整 Skill 规格。
+- `skills/`：~~完整 Skill 规格~~ → **已迁至仓库根 `skills/capabilities/`**
+  （2026-08-06 统一管理：能力规格与意图技能同目录分层存放，落点对照见
+  `skills/capabilities/README.md`）。
 - `requirements/`：可直接作为后续 Stage 实施需求。
 - `code_skeleton/`：与现有 `app/chat/` 风格对齐的 Python 骨架。
 - `configs/`：Skill 注册表和活动配置示例。
