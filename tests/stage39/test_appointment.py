@@ -36,6 +36,8 @@ from app.chat.state.types import TurnStatus
         ("我要预约上门取件", IntentLabel.APPOINTMENT_BOOK),
         ("退货上门怎么预约", IntentLabel.APPOINTMENT_BOOK),
         ("预约", IntentLabel.APPOINTMENT_BOOK),  # 裸短句（收集服务类型）
+        ("预约明天下午的空调安装", IntentLabel.APPOINTMENT_BOOK),  # 时间/商品插入语
+        ("帮我约一下这周五的师傅上门维修", IntentLabel.APPOINTMENT_BOOK),
         ("取消预约", IntentLabel.APPOINTMENT_CANCEL),
         ("帮我把预约取消了", IntentLabel.APPOINTMENT_CANCEL),
     ],
