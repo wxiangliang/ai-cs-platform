@@ -173,3 +173,25 @@ async def session_tool_calls(
         db, tid, session_id, limit=limit
     )
     return success_response(data={"tool_calls": [_tool_call_item(t) for t in rows]})
+
+
+@router.get("/journeys/{user_id}")
+async def get_journey(
+    user_id: str,
+    auth: AuthContext | None = Depends(require_admin),
+    tenant_id: str | None = Query(default=None, max_length=64),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """客户旅程（Stage 38）：阶段 + 风险标记 + 近 20 条转移史。"""
+    tid = resolve_tenant_id(auth, tenant_id)
+    from app.repositories.customer_journey_repository import customer_journey_repository
+
+    row = await customer_journey_repository.get_by_user(db, tid, user_id)
+    if row is None:
+        return success_response(data={"user_id": user_id, "stage": "NEW",
+                                      "at_risk": False, "signals": []})
+    return success_response(data={
+        "user_id": user_id, "stage": row.stage, "at_risk": row.at_risk,
+        "signals": row.signals_json or [],
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    })

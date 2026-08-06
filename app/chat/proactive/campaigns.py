@@ -58,11 +58,18 @@ def _parse_ts(value: Any) -> datetime | None:
         return None
 
 
-def campaign_eligible(campaign: dict[str, Any], intent: str, now: datetime) -> bool:
-    """单活动资格：启用 + 在有效期 + 与本轮完成的意图相关。
+def campaign_eligible(
+    campaign: dict[str, Any],
+    intent: str,
+    now: datetime,
+    journey_stage: str | None = None,
+) -> bool:
+    """单活动资格：启用 + 在有效期 + 意图相关 + 旅程阶段匹配（Stage 38）。
 
     相关性（需求第 4 节，防「有活动就推」）：eligible_intents 支持完整意图码
     或 `DOMAIN.` 前缀；列表为空视为不相关（必须显式声明面向哪些意图）。
+    旅程门控：配置声明 eligible_journey_stages 而客户阶段未知/不符 → 不推
+    （营销保守方向）；未声明则不限阶段。
     """
     if not campaign.get("enabled"):
         return False
@@ -72,6 +79,9 @@ def campaign_eligible(campaign: dict[str, Any], intent: str, now: datetime) -> b
         return False
     if end and now > end:
         return False
+    stages = campaign.get("eligible_journey_stages") or []
+    if stages and journey_stage not in stages:
+        return False
     eligible = campaign.get("eligible_intents") or []
     return any(
         intent == rule or (rule.endswith(".") and intent.startswith(rule))
@@ -80,10 +90,14 @@ def campaign_eligible(campaign: dict[str, Any], intent: str, now: datetime) -> b
     )
 
 
-def select_campaign(intent: str, now: datetime | None = None) -> dict[str, Any] | None:
+def select_campaign(
+    intent: str,
+    now: datetime | None = None,
+    journey_stage: str | None = None,
+) -> dict[str, Any] | None:
     """按配置顺序选第一个符合资格的活动（v1 不排序，顺序即优先级）。"""
     now = now or datetime.now(timezone.utc)
     for campaign in load_campaigns():
-        if campaign_eligible(campaign, intent, now):
+        if campaign_eligible(campaign, intent, now, journey_stage):
             return campaign
     return None

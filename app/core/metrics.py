@@ -105,6 +105,11 @@ HANDOFF_TICKETS = Counter("handoff_tickets_total", "转人工建单次数", ["re
 # Stage 34 服务 Case：event=opened/merged/resolved/closed/reopened/escalated/sla_warning
 SERVICE_CASES = Counter("service_cases_total", "服务 Case 生命周期事件", ["event"])
 
+# Stage 38 客户旅程：to_stage=推进到的阶段（单调不倒退）
+JOURNEY_TRANSITIONS = Counter(
+    "journey_transitions_total", "客户旅程阶段推进", ["to_stage"]
+)
+
 # Stage 36 事件驱动主动通知：outcome=delivered/duplicate/opted_out/quiet_hours/
 # no_channel/verify_failed/unknown_type/disabled/suppressed_redis
 PROACTIVE_EVENTS = Counter(
@@ -229,6 +234,11 @@ def count_action(tool_id: str | None, ok: bool) -> None:
     """记录一次写操作执行（ActionExecutor 收口调用）。"""
     label = tool_id if tool_id in _ACTION_TOOL_WHITELIST else "other"
     ACTION_EXECUTIONS.labels(tool_id=label, ok=str(ok).lower()).inc()
+
+
+def count_journey(to_stage: str) -> None:
+    """记一次旅程阶段推进（Stage 38）。"""
+    JOURNEY_TRANSITIONS.labels(to_stage=to_stage).inc()
 
 
 def count_event(event_type: str, outcome: str) -> None:

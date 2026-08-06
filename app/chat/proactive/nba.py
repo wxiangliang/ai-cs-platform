@@ -79,22 +79,25 @@ def _final_intent(state: Mapping[str, Any]) -> str:
     return str(intent_dict.get("final_intent") or intent_dict.get("pred_label") or "")
 
 
-async def decide_proactive(state: Mapping[str, Any]) -> dict[str, Any] | None:
+async def decide_proactive(
+    state: Mapping[str, Any], db: Any = None
+) -> dict[str, Any] | None:
     """主入口（save_turn 回复定稿前调用）：产出决策证据供落库与回复追加。
 
+    db 可选（Stage 38）：给了才做旅程阶段门控（eligible_journey_stages）；
     返回 None 表示功能未启用；否则恒返回带 reason_codes 的决策对象
     （影子期 applied=False 只观察）。任何异常 fail-closed 为 NO_ACTION。
     """
     if not settings.PROACTIVE_ENABLED:
         return None
     try:
-        return await _decide(state)
+        return await _decide(state, db)
     except Exception:  # noqa: BLE001 - 主动服务失败绝不打断保存链路
         logger.warning("proactive decide failed, suppressed", exc_info=True)
         return {"action": ACTION_NONE, "suppressed_by": "error", "reason_codes": ["error"]}
 
 
-async def _decide(state: Mapping[str, Any]) -> dict[str, Any]:
+async def _decide(state: Mapping[str, Any], db: Any = None) -> dict[str, Any]:
     tenant = state.get("tenant_id", "")
     session_id = state.get("session_id", "")
     user = state.get("user_id", "") or session_id
@@ -136,7 +139,19 @@ async def _decide(state: Mapping[str, Any]) -> dict[str, Any]:
                 "reason_codes": ["unregistered_user", f"intent:{intent}"],
             }
 
-    campaign = select_campaign(intent)
+    # —— Stage 38：旅程阶段（活动 eligible_journey_stages 门控 + 决策证据）——
+    journey_stage: str | None = None
+    if db is not None:
+        try:
+            from app.services.journey_service import journey_service
+
+            journey = await journey_service.get_stage(db, tenant, user_id=str(state["user_id"])) \
+                if state.get("user_id") else None
+            journey_stage = journey["stage"] if journey else None
+        except Exception:  # noqa: BLE001 - 旅程查询失败按未知处理（保守不推限定活动）
+            journey_stage = None
+
+    campaign = select_campaign(intent, journey_stage=journey_stage)
     if campaign is None:
         return {"action": ACTION_NONE, "suppressed_by": "no_campaign", "reason_codes": ["no_campaign"]}
 
@@ -153,7 +168,10 @@ async def _decide(state: Mapping[str, Any]) -> dict[str, Any]:
         "campaign_version": campaign.get("version"),
         "hook": str(campaign.get("hook") or ""),
         "applied": applied,
-        "reason_codes": ["eligible", f"intent:{intent}"],
+        "reason_codes": [
+            "eligible", f"intent:{intent}",
+            *( [f"journey:{journey_stage}"] if journey_stage else [] ),
+        ],
     }
     if applied:
         await _record_impression(tenant, session_id, user, campaign["campaign_id"])

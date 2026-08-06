@@ -308,6 +308,28 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
             if created:
                 reply += t("handoff.repeated_unknown", locale)
 
+    # —— Stage 38 客户旅程：本轮意图/状态推进阶段（先于 NBA 决策——
+    # 本轮阶段立即可用于活动资格；fail-open 不打断主链路）——
+    if state.get("user_id") and not state.get("blocked"):
+        try:
+            from app.services.journey_service import journey_service
+
+            async with session.begin_nested():
+                await journey_service.update_from_turn(
+                    session,
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    user_id=state["user_id"],
+                    intent=str(final_intent or ""),
+                    status=str(status or ""),
+                    csat=(
+                        int(state["csat_capture"]["score"])
+                        if state.get("csat_capture") else None
+                    ),
+                )
+        except Exception:  # noqa: BLE001
+            logger.warning("journey update failed", exc_info=True)
+
     # —— Stage 31 主动服务（默认关）：主任务闭环后至多追加一条活动提示。
     # 抑制矩阵/频控/拒绝冷却在 decide_proactive 内收口；影子模式只落日志
     # 不改回复；决策证据进 graph_trace_json.proactive（guardrail 同模式）——
@@ -316,7 +338,7 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
         from app.chat.proactive import decide_proactive
         from app.core.metrics import count_proactive
 
-        proactive = await decide_proactive(state)
+        proactive = await decide_proactive(state, db=session)
         if proactive:
             action = proactive.get("action")
             if proactive.get("applied") and action == "MENTION_CAMPAIGN" and proactive.get("hook"):

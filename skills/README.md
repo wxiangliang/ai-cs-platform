@@ -39,9 +39,9 @@
 | promotion_guide | `configs/campaigns.json` + NBA `MENTION_CAMPAIGN`（Stage 31） | 策略轴配置，非意图 |
 | next_best_action | `app/chat/proactive/nba.py` 规则策略（Stage 31/33） | 策略轴代码，非意图 |
 | response_planner | `save_turn` 回复定稿点收口（主回复+至多一条建议追加） | 机制，非意图 |
-| customer_journey | 未实现（roadmap 3.7 backlog：需持久用户画像） | ⏳ 推迟 |
+| customer_journey | `customer_journey` 表 + `app/services/journey_service.py`（Stage 38：save_turn 规则推导，NBA 活动 `eligible_journey_stages` 门控消费） | 长期上下文，非意图 |
 
-原包目录保留为设计参考；将来 journey 落地时同样按此表归位。
+原包目录保留为设计参考；至此八能力全部归位（2026-08-06）。
 
 ## 4. 多语言
 
