@@ -81,6 +81,40 @@ flowchart TB
 | 意图轴 | 业务部分具体想做什么？ | 规则层 + SetFit + KNN + LLM 二判 |
 | 策略轴 | 主任务办完后，是否适合主动引导？ | NBA 规则策略（Stage 31/33，影子先行） |
 
+## 📁 目录结构
+
+<details>
+<summary><b>点开看仓库布局（详版见 <code>CLAUDE.md</code>）</b></summary>
+
+```text
+ai-cs-platform/
+├── app/                       # FastAPI 后端
+│   ├── api/routes/            # 接入层：chat(SSE/WS)/handoff/cases/events/kb/product/observe/metrics
+│   ├── services/              # 应用服务：chat/handoff/notify/case(SLA)/event/journey
+│   ├── chat/                  # 聊天主链路
+│   │   ├── graph/             # LangGraph 决策图（8 线性节点 + 5 回复分支 + 节点写契约）
+│   │   ├── intent/            # 混合意图：规则控制层 + SetFit + KNN + LLM 二判 + Meta 影子
+│   │   ├── mode/              # 对话模式门：闲聊/业务/混合/OOS（共享 SetFit body）
+│   │   ├── guidelines/        # 行为准则层（Parlant 借鉴：condition-action 动态注入）
+│   │   ├── proactive/         # 主动服务：NBA + 活动池（抑制矩阵/频控/拒绝冷却）
+│   │   ├── guardrail/ tools/ actions/ agents/ slots/ state/ skills/ memory/ llm/ cache/
+│   ├── kb/                    # RAG：解析管道/结构感知切分/混合检索/重排/生成
+│   ├── core/                  # 配置/鉴权/限流/幂等/指标/追踪/身份等级/i18n
+│   ├── models/ repositories/  # ORM（18 表）与数据访问层
+│   └── product/ experiments/  # 商品库 / A/B 实验
+├── skills/                    # 意图技能声明（35 个 md，Loader 启动加载）
+│   └── capabilities/          # 能力规格（策略轴，不加载；含落点对照）
+├── configs/                   # 运行时配置：活动池/补偿政策/行为准则（example 入库）
+├── web/                       # Vue 3 测试控制台（对话调试/坐席工作台/知识库运营/观测）
+├── deploy/                    # Dockerfile/生产 compose/监控（Prometheus+Grafana）/cron 调度器
+├── scripts/                   # 训练/密钥/回流/回放/SLA 巡检/缺口挖掘等 CLI（30+）
+├── docs/                      # 需求（stage-01~40）/架构/API/数据库/运维/评估报告
+├── tests/                     # 按 stage 分目录 + 意图/多意图/RAG 评估门禁（620+）
+└── alembic/ + sql/ddl/        # 异步迁移 + 建表 SQL 生成物
+```
+
+</details>
+
 ## 🚀 快速开始
 
 依赖：**Python 3.12 + uv** · **PostgreSQL / Redis**（必需）· **Milvus 2.5+**（可选，`KB_ENABLED=false` 关闭）
@@ -129,7 +163,7 @@ uv run python -m app.kb.reindex --tenant t1
 uv run ruff check app tests scripts && uv run mypy app && uv run pytest
 ```
 
-- **ruff 干净 · mypy 干净 · 550+ 项测试通过**（CI：`.github/workflows/ci.yml`，含意图 / 多意图 / RAG 评估门禁）
+- **ruff 干净 · mypy 干净 · 620+ 项测试通过**（CI：`.github/workflows/ci.yml`，含意图 / 多意图 / RAG 评估门禁）
 - 按 **Stage 分阶段推进**，每个阶段有需求文档 + 实现记录（`docs/requirements/`）
 - 节点写契约执法、工具只读白名单元数据化、模型产物指纹校验等工程护栏内建
 - 生产硬门禁：`APP_ENV=prod` 时鉴权/调试/弱口令缺项**拒绝启动**
@@ -149,7 +183,7 @@ uv run ruff check app tests scripts && uv run mypy app && uv run pytest
 ## 🗺 阶段历程
 
 <details>
-<summary><b>Stage 01–33 全部已实现，点开看分组明细</b></summary>
+<summary><b>Stage 01–40 全部已实现，点开看分组明细</b></summary>
 
 | 阶段 | 主题 |
 |------:|------|
@@ -164,6 +198,8 @@ uv run ruff check app tests scripts && uv run mypy app && uv run pytest
 | 26–27 | 意图决策加固（补槽/切换守护/margin 路由）· Meta-classifier 影子 |
 | 28–29 | Web 测试控制台（Vue 3）· 控制台全接口覆盖 |
 | 30–33 | 对话模式门 · 主动服务 NBA · 选品顾问/商品对比 · 会员注册引导 |
+| 34–37 | Case 工单与 SLA（含 Service Recovery）· 身份核验分级 IAL · 事件驱动主动客服 · 知识缺口发现+质量 Scorecard |
+| 38–40 | 客户旅程 · 预约与资源调度 · 行为准则层（Parlant 借鉴） |
 
 另有横向工程专项：全链路 Review 加固、节点写契约、生产就绪审计等，详见 `CLAUDE.md`。
 

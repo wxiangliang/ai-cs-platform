@@ -76,18 +76,26 @@ app/
     handoff.py         # 坐席工单 API：队列/详情/claim/reply/resolve（admin scope，Stage 07）
     ws.py              # WS 双端实时通道（用户端 + 坐席端，Stage 15）
     kb.py / product.py # 知识库 / 商品管理面（admin scope）
+    cases.py           # 服务 Case 坐席 API：队列/流转/resolve/补偿评估（Stage 34）
+    events.py          # 业务事件 webhook 入口（事件驱动主动客服，Stage 36）
+    observe.py         # 观测查询：会话/消息流/决策日志/工具审计/旅程（Stage 29/38）
     metrics.py         # GET /metrics（Prometheus，Stage 09）
   schemas/chat.py      # Chat API 请求/响应 Pydantic 模型
   services/
     chat_service.py    # 应用服务层：协调 Repository + LangGraph 图 + 指标/追踪/记忆/反馈
     handoff_service.py # 转人工闭环：幂等建单/上下文移交包/坐席操作/CSAT 询问（Stage 07/15）
     notify_service.py  # WsHub：WS 连接枢纽 + Redis Pub/Sub 跨进程广播（Stage 15）
+    case_service.py    # 服务 Case：生命周期/幂等合并/SLA 升级/补偿政策评估（Stage 34）
+    event_service.py   # 事件驱动主动通知：幂等/退订/静默/发送前重查（Stage 36）
+    journey_service.py # 客户旅程：阶段规则推导（单调不倒退 + at_risk 叠加，Stage 38）
   core/                # config(生产硬门禁) / logging / exceptions / responses / auth(API Key+吊销)
                        # rate_limit / idempotency(在途锁+指纹) / metrics(Prometheus) / tracing(Langfuse)
+                       # identity(IAL 身份等级 contextvar，Stage 35) / i18n(Stage 19)
   db/                  # base.py(Declarative Base + Mixin，末尾导入 models 供 autogenerate)、session.py(async engine/池)
   cache/redis_client.py# 全局 async Redis client，startup/shutdown 管理
   models/              # ORM：chat_session/message/dialog_state/decision_log/task/tool_call/
-                       # handoff_ticket/feedback/csat/api_credential/kb_*/faq_entry/product_item/user_memory
+                       # handoff_ticket/feedback/csat/api_credential/kb_*/faq_entry/product_item/
+                       # user_memory/service_case(Stage 34)/customer_journey(Stage 38)
   repositories/        # 数据访问层，BaseRepository + 各表 repository（只做 CRUD，不写业务）
   chat/                # 聊天主链路
     graph/             # LangGraph：state.py / builder.py / nodes/（8 线性节点 + 5 回复分支，见 system_overview 第 4 节）
@@ -98,7 +106,8 @@ app/
     confirmation/      # 确认门含糊应答 LLM 解析（Stage 05；L3 弱确认收紧在 confirmation_parse 节点）
     intent/            # 混合分类器：规则控制层 + SetFit + LLM 二判 + 多意图切分（Stage 03/04/10）
     mode/              # 对话模式门：闲聊/业务/混合/OOS 四模式，共享 SetFit body（Stage 30，默认关）
-    proactive/         # 主动服务：NBA 规则策略 + 活动池（抑制矩阵/频控/拒绝冷却，Stage 31，默认关）
+    proactive/         # 主动服务：NBA 规则策略 + 活动池（抑制矩阵/频控/拒绝冷却，Stage 31/33/38，默认关）
+    guidelines/        # 行为准则层：condition-action 准则表+规则匹配+LLM 路径注入（Stage 40，默认关）
     slots/             # SlotExtractor + 正则 patterns + LLM 兜底
     state/             # DialogStateManager 状态机
     skills/            # SkillRegistry 能力声明 + responder 模板回复 + llm_responder 润色

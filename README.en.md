@@ -73,6 +73,40 @@ flowchart TB
     E4 & E5 -.-> T["Tool layer<br/>mock ↔ MCP ↔ real systems"]
 ```
 
+## 📁 Repository layout
+
+<details>
+<summary><b>Expand (full version in <code>CLAUDE.md</code>)</b></summary>
+
+```text
+ai-cs-platform/
+├── app/                       # FastAPI backend
+│   ├── api/routes/            # chat(SSE/WS)/handoff/cases/events/kb/product/observe/metrics
+│   ├── services/              # chat/handoff/notify/case(SLA)/event/journey
+│   ├── chat/                  # main chat pipeline
+│   │   ├── graph/             # LangGraph decision graph (+ node write contracts)
+│   │   ├── intent/            # hybrid intent: rules + SetFit + KNN + LLM review + Meta shadow
+│   │   ├── mode/              # conversation mode gate (social/task/mixed/OOS)
+│   │   ├── guidelines/        # behavior guidelines (Parlant-inspired dynamic injection)
+│   │   ├── proactive/         # NBA + campaigns (suppression matrix / caps / cooldown)
+│   │   ├── guardrail/ tools/ actions/ agents/ slots/ state/ skills/ memory/ llm/ cache/
+│   ├── kb/                    # RAG: parsing / chunking / hybrid retrieval / rerank / generation
+│   ├── core/                  # config/auth/ratelimit/idempotency/metrics/tracing/identity/i18n
+│   ├── models/ repositories/  # ORM (18 tables) & data access
+│   └── product/ experiments/  # product catalog / A/B experiments
+├── skills/                    # intent skill declarations (35 md, loaded at startup)
+│   └── capabilities/          # capability specs (policy axis, not loaded)
+├── configs/                   # runtime configs: campaigns / compensation / guidelines
+├── web/                       # Vue 3 console (chat debug / agent workbench / KB ops / observability)
+├── deploy/                    # Dockerfile / prod compose / monitoring / cron scheduler
+├── scripts/                   # training / keys / flywheel / replay / SLA / gap-mining CLIs (30+)
+├── docs/                      # requirements (stage-01~40) / architecture / API / ops / evaluations
+├── tests/                     # per-stage dirs + intent/multi-intent/RAG eval gates (620+)
+└── alembic/ + sql/ddl/        # async migrations + generated DDL
+```
+
+</details>
+
 ## 🚀 Quick start
 
 Requires **Python 3.12 + uv**, **PostgreSQL / Redis** (mandatory), **Milvus 2.5+** (optional — `KB_ENABLED=false` to skip).
@@ -99,7 +133,7 @@ Web console: `cd web && npm install && npm run dev` (:5173, proxies `/api`).
 uv run ruff check app tests scripts && uv run mypy app && uv run pytest
 ```
 
-**ruff clean · mypy clean · 550+ tests passing.** Staged development (Stage 01–33), each stage documented under `docs/requirements/` with implementation records. Engineering guardrails built in: node write contracts, readonly tool whitelist metadata, model artifact fingerprint checks, production hard gates.
+**ruff clean · mypy clean · 620+ tests passing.** Staged development (Stage 01–40), each stage documented under `docs/requirements/` with implementation records. Engineering guardrails built in: node write contracts, readonly tool whitelist metadata, model artifact fingerprint checks, production hard gates.
 
 ## ⚠️ Known limits
 
