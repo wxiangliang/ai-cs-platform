@@ -182,3 +182,17 @@ def apply_declarations(skills: dict[str, Skill]) -> None:
     if unmatched:
         logger.info("skill md 声明暂无运行时注册（正常，逐步接入）：%s", sorted(unmatched))
     logger.info("skill declarations applied: %d merged", matched)
+
+    # —— 能力规格落点校验（skills/capabilities/ 活契约化）：锚点漂移按
+    # SKILL_LOADER_STRICT 语义处理（默认告警，strict 拒绝启动）——
+    try:
+        from app.chat.skills.capability_loader import validate_capability_anchors
+
+        issues = validate_capability_anchors()
+    except Exception as exc:  # noqa: BLE001 - 声明损坏视为硬问题按告警/strict 处理
+        issues = [f"capability specs load failed: {exc}"]
+    if issues:
+        message = "能力规格落点漂移（%d 条）：%s" % (len(issues), "; ".join(issues))
+        if settings.SKILL_LOADER_STRICT:
+            raise SkillLoadError(message)
+        logger.warning(message)

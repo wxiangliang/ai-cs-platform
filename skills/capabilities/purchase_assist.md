@@ -1,3 +1,11 @@
+---
+capability_id: purchase_assist
+status: partial   # 只落对比；blocker 识别/下单引导推迟（stage-32 需求 1.2）
+implemented_by:
+  intents: [PRODUCT.COMPARE]
+  modules: [app/chat/graph/nodes/product_answer.py]
+---
+
 # PURCHASE_ASSIST Skill
 
 ## 目标

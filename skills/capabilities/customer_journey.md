@@ -1,3 +1,11 @@
+---
+capability_id: customer_journey
+status: implemented
+implemented_by:
+  modules: [app/services/journey_service.py]
+  metrics: [journey_transitions_total]
+---
+
 # CUSTOMER_JOURNEY Skill
 
 ## 目标

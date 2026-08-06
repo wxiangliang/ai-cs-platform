@@ -1,3 +1,11 @@
+---
+capability_id: new_user_onboarding
+status: implemented   # 验证码环节遗留（任务中途工具机制）
+implemented_by:
+  intents: [MEMBER.REGISTER]
+  modules: [app/chat/tools/mock_provider.py]
+---
+
 # NEW_USER_ONBOARDING Skill
 
 ## 目标

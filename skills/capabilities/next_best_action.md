@@ -1,3 +1,11 @@
+---
+capability_id: next_best_action
+status: implemented
+implemented_by:
+  modules: [app/chat/proactive/nba.py]
+  metrics: [proactive_actions_total]
+---
+
 # NEXT_BEST_ACTION Policy Skill
 
 ## 目标

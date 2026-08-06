@@ -1,28 +1,23 @@
+# 注册引导流程声明（参考件：运行时以任务状态机为准，见 stage-32 需求 1.3）
+# 2026-08-06 与实现对齐（Stage 33）：入口意图 MEMBER.REGISTER；v1 流程
+# phone → 确认门 → register_member；验证码环节遗留（需任务中途工具机制，
+# 原 SEND_CODE/VERIFY_CODE 步骤随真实会员系统对接恢复）
 code: NEW_USER_ONBOARDING
-version: 1
+version: 2
 priority: 70
 goal: complete_user_registration
 entry_intents:
-  - ACCOUNT.REGISTRATION_HELP
+  - MEMBER.REGISTER
 required_slots:
-  - registration_channel
-  - phone_or_email
-  - verification_code
-  - consent_accepted
+  - phone
 steps:
-  - CHECK_STATUS
-  - CHOOSE_CHANNEL
-  - COLLECT_IDENTIFIER
-  - SEND_CODE
-  - COLLECT_CODE
-  - VERIFY_CODE
-  - CONFIRM_CREATE_ACCOUNT
-  - CREATE_ACCOUNT
-  - OPTIONAL_PROFILE
-  - COMPLETE
+  - COLLECT_IDENTIFIER         # 收手机号
+  - CONFIRM_CREATE_ACCOUNT     # 确认门（写操作不豁免）
+  - CREATE_ACCOUNT             # ActionExecutor → register_member（幂等）
+  - COMPLETE                   # 回执含会员号；NBA 闭环停止建议
 write_actions:
-  - CREATE_ACCOUNT
-suppression_conditions:
+  - register_member
+suppression_conditions:        # NBA 主动建议入口的抑制（已由全局抑制矩阵承担）
   - active_complaint
   - active_refund
   - human_handoff

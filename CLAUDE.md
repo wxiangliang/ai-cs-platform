@@ -127,7 +127,7 @@ tests/                 # 按 stage 分目录 + eval 评估门禁（意图/多意
 web/                   # Web 测试控制台（Vue3+Vite4+Element Plus，Stage 28）：登录/多级菜单/对话控制台
 docs/                  # 需求、架构、API、数据库、测试、运维文档（按阶段拆分）
 skills/                # 意图技能声明（35 个 md，Loader 加载；与注册表双向覆盖测试锁定）
-  capabilities/        # 能力规格（策略轴/机制类非意图，不被加载；skill pack 8 规格迁入+落点对照）
+  capabilities/        # 能力规格（策略轴非意图）：front-matter 落点锚点声明+启动校验（活契约，漂移即告警/CI 红）
 configs/               # 运行时 JSON 配置（campaigns.example.json 活动池示例等）
 sql/ddl/               # 建表 SQL（scripts/export_table_ddl.py 生成物，勿手改）
 ```

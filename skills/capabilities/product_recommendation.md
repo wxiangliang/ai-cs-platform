@@ -1,3 +1,11 @@
+---
+capability_id: product_recommendation
+status: implemented
+implemented_by:
+  intents: [PRODUCT.RECOMMEND]
+  modules: [app/product/provider.py]
+---
+
 # PRODUCT_RECOMMENDATION Skill
 
 ## 目标

@@ -1,3 +1,12 @@
+---
+capability_id: promotion_guide
+status: implemented
+implemented_by:
+  modules: [app/chat/proactive/campaigns.py]
+  configs: [configs/campaigns.example.json]
+  metrics: [proactive_actions_total]
+---
+
 # PROMOTION_GUIDE Skill
 
 ## 目标

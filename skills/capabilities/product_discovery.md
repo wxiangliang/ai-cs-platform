@@ -1,3 +1,11 @@
+---
+capability_id: product_discovery
+status: implemented
+implemented_by:
+  intents: [PRODUCT.RECOMMEND]
+  modules: [app/chat/graph/nodes/product_answer.py]
+---
+
 # PRODUCT_DISCOVERY Skill
 
 ## 目标

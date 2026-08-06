@@ -1,27 +1,21 @@
+# 选品引导流程声明（参考件：运行时以任务状态机为准，见 stage-32 需求 1.3）
+# 2026-08-06 与实现对齐：入口意图与槽位改为实际落点（原 PRODUCT.SELECTION_HELP
+# 未新增——盘点发现 PRODUCT.RECOMMEND 已是训练意图，直接实做，见 stage-32 需求）
 code: PRODUCT_DISCOVERY
-version: 1
+version: 2
 priority: 60
 goal: build_structured_product_need
 entry_intents:
-  - PRODUCT.SELECTION_HELP
+  - PRODUCT.RECOMMEND
 required_slots:
   - category
-  - budget_range
-  - usage_scenario
+  - budget
 optional_slots:
-  - quantity
-  - brand_preference
-  - must_have_features
-  - excluded_features
-  - size_or_capacity
-  - delivery_deadline
+  - use_scene
+  - preference
 steps:
-  - IDENTIFY_CATEGORY
-  - COLLECT_HARD_CONSTRAINTS
-  - COLLECT_PREFERENCES
-  - CONFIRM_REQUIREMENTS
-  - REQUEST_RECOMMENDATION
-  - PRESENT_OPTIONS
-  - REFINE_OR_COMPLETE
+  - COLLECT_HARD_CONSTRAINTS   # category+budget 一条 collect 模板问齐
+  - PRESENT_OPTIONS            # 硬约束过滤 + 价格升序 + trade-off
+  - REFINE_OR_COMPLETE         # 「对比 A 和 B」进入 PRODUCT.COMPARE
 timeout_minutes: 120
-resume_policy: summarize_known_slots
+resume_policy: summarize_known_slots   # task_stack 恢复不重问已收集槽位

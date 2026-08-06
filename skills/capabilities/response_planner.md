@@ -1,3 +1,10 @@
+---
+capability_id: response_planner
+status: partial   # 简化实现：主回复+至多一条建议在 save_turn 收口，不建独立 planner
+implemented_by:
+  modules: [app/chat/graph/nodes/save_turn.py]
+---
+
 # RESPONSE_PLANNER Skill
 
 ## 目标
