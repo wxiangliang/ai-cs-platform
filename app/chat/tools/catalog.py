@@ -43,6 +43,7 @@ TOOL_CATALOG: dict[str, ToolMeta] = {
     "query_product": ToolMeta("查询商品价格/库存（参数 product_name）", readonly=True),
     "query_user_coupons": ToolMeta("查询用户可用优惠券（无参数）", readonly=True, min_ial=1),
     "query_member_status": ToolMeta("查询用户是否已注册会员（参数 user_id）", readonly=True, min_ial=1),
+    "query_appointment_slots": ToolMeta("查询服务可用预约时间槽（参数 service_type）", readonly=True, min_ial=1),
     # —— 写操作（唯一入口 ActionExecutor，永不进任何模型可选白名单）——
     # 改地址 IAL2：收货地址改写是账号盗用的典型攻击面（Stage 35 评审示例）
     "create_refund_ticket": ToolMeta("提交退款工单", readonly=False, min_ial=1),
@@ -54,6 +55,8 @@ TOOL_CATALOG: dict[str, ToolMeta] = {
     "cancel_order": ToolMeta("取消订单", readonly=False, min_ial=1),
     "update_order_address": ToolMeta("修改订单收货地址", readonly=False, min_ial=2),
     "register_member": ToolMeta("注册会员（Stage 33）", readonly=False, min_ial=1),
+    "create_appointment": ToolMeta("创建服务预约（Stage 39）", readonly=False, min_ial=1),
+    "cancel_appointment": ToolMeta("取消服务预约（Stage 39）", readonly=False, min_ial=1),
 }
 
 # mock 派发接受的同义 id → 规范名（不进白名单，仅存在性说明）

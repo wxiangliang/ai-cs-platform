@@ -30,9 +30,9 @@ def test_mask_sensitive_phone():
 
 
 def test_skill_loader_declarations_complete():
-    """全部 33 个技能 md 可加载且校验通过（Stage 33 增 MEMBER.REGISTER、统一批增 META.DENY）；写技能带 action 声明。"""
+    """全部 35 个技能 md 可加载且校验通过（Stage 39 增 APPOINTMENT.BOOK/CANCEL）；写技能带 action 声明。"""
     decls = load_skill_declarations()
-    assert len(decls) == 33
+    assert len(decls) == 35
     for intent in ("AFTERSALE.REFUND", "ORDER.CANCEL", "PAYMENT.INVOICE"):
         assert decls[intent]["actions"], f"{intent} 缺 action 声明"
         assert decls[intent]["risk_level"] == "L3"

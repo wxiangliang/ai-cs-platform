@@ -13,6 +13,8 @@ INTENT_DESCRIPTIONS: dict[str, str] = {
     "PRODUCT.COMPARE": "多个商品对比",
     "PRODUCT.RECOMMEND": "商品推荐/选购建议",
     "MEMBER.REGISTER": "注册/开通本平台会员（新手引导；第三方平台账号注册不算）",
+    "APPOINTMENT.BOOK": "预约上门服务（安装/维修/取件/退货上门/回访/演示）",
+    "APPOINTMENT.CANCEL": "取消已有的服务预约（被动被取消的咨询不算）",
     "ORDER.QUERY_STATUS": "订单状态查询（是否付款/是否发货）",
     "ORDER.CREATE": "想购买/下单意向",
     "ORDER.CANCEL": "取消还没发货的订单",

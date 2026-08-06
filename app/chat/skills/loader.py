@@ -11,7 +11,7 @@ priority / rag_fallback / prompt_fragment）合并进代码注册表的 Skill �
   留在 md，运行时映射见 taxonomy 第 7 节槽位字典）。
 
 启动校验（SKILL_LOADER_STRICT 控制告警级别）：
-- 硬错误（直接抛异常拒绝启动）：skill_id 不在意图目录、domain 不在 10 域枚举、
+- 硬错误（直接抛异常拒绝启动）：skill_id 不在意图目录、domain 不在 11 域枚举、
   缺 risk_level/priority、YAML 解析失败；
 - 告警（strict=true 时升级为硬错误）：confirmation_prompt 占位符在
   slots ∪ tool_returns ∪ 系统上下文白名单中找不到来源。
@@ -40,6 +40,7 @@ _DOMAINS = {
     "PRODUCT", "ORDER", "LOGISTICS", "AFTERSALE", "PAYMENT",
     "PROMOTION", "FAQ", "META", "CHITCHAT",
     "MEMBER",  # Stage 33 第 10 域（会员注册引导）
+    "APPOINTMENT",  # Stage 39 第 11 域（预约与资源调度）
 }
 # 上下文敏感 META 意图：在 taxonomy 注册但不在 SetFit/二判目录，loader 单独放行
 _CONTEXT_META = {"META.SLOT_ONLY", "META.CORRECTION", "META.DENY"}
@@ -72,7 +73,7 @@ def _validate(path: Path, meta: dict[str, Any], warnings: list[str]) -> None:
     if skill_id not in INTENT_DESCRIPTIONS and skill_id not in _CONTEXT_META:
         raise SkillLoadError(f"{path.name}: skill_id={skill_id} 不在意图目录（catalog.py/taxonomy）")
     if meta.get("domain") not in _DOMAINS:
-        raise SkillLoadError(f"{path.name}: domain={meta.get('domain')} 不在 10 域枚举")
+        raise SkillLoadError(f"{path.name}: domain={meta.get('domain')} 不在 11 域枚举")
     if not meta.get("risk_level") or meta.get("priority") is None:
         raise SkillLoadError(f"{path.name}: 缺少 risk_level / priority（schema v2 必填）")
 

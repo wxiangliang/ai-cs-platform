@@ -175,6 +175,33 @@ _SKILLS: dict[str, Skill] = {
             "confirmed": "已为您提交会员注册，开通结果以短信通知为准～",
         },
     ),
+    # —— 预约（Stage 39：写操作，进确认门；mock 资源池，真实调度系统对接只换工具内部）——
+    IntentLabel.APPOINTMENT_BOOK: Skill(
+        skill_id="appointment_book",
+        name="服务预约",
+        domain="APPOINTMENT",
+        intent=IntentLabel.APPOINTMENT_BOOK,
+        kind=SkillKind.WRITE,
+        required_slots=["service_type", "appointment_time", "phone"],
+        templates={
+            "collect": "好的，我来帮您预约！请告诉我服务类型（安装/维修/取件/退货上门/回访/演示）、期望时间和联系电话，例如「明天下午安装，13800138000」。",
+            "confirm": "为您预约「{service_type}」服务，时间「{appointment_time}」（北京时间），联系电话「{phone}」，确认提交吗？（回复“确认”继续，回复“不用”放弃）",
+            "confirmed": "预约已提交！师傅上门前会提前与您电话联系，如需变更可回复「取消预约」后重新预约。",
+        },
+    ),
+    IntentLabel.APPOINTMENT_CANCEL: Skill(
+        skill_id="appointment_cancel",
+        name="取消预约",
+        domain="APPOINTMENT",
+        intent=IntentLabel.APPOINTMENT_CANCEL,
+        kind=SkillKind.WRITE,
+        required_slots=["appointment_no"],
+        templates={
+            "collect": "好的，请提供要取消的预约号（AP 开头）。",
+            "confirm": "您要取消预约「{appointment_no}」，确认吗？（回复“确认”继续，回复“不用”放弃）",
+            "confirmed": "预约「{appointment_no}」已取消。如需重新预约随时告诉我。",
+        },
+    ),
     # —— 售后（写操作，进确认门，不直接执行）——
     IntentLabel.AFTERSALE_REFUND: Skill(
         skill_id="aftersale_refund",

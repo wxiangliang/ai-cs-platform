@@ -126,6 +126,18 @@ v1 阶段意图定义分散在三处且互相不一致：
 > README 第 5 节流程）。写操作过确认门（ActionExecutor `register_member`）。
 > 主动建议入口归 NBA 轴（START_ONBOARDING，stage-33 需求 1.3 节）。
 
+### APPOINTMENT 域（2）★ Stage 39 新增（2026-08-06）
+
+| 意图码 | 描述 | 必填槽位 | 可选槽位 | 风险 | 优先级 |
+|---|---|---|---|---|---|
+| APPOINTMENT.BOOK | 预约上门服务（安装/维修/取件/退货上门/回访/演示） | service_type, appointment_time, phone | — | L2 | 60 |
+| APPOINTMENT.CANCEL | 取消已有预约 | appointment_no | — | L2 | 60 |
+
+> 触发：规则层确定性关键词（「预约安装/帮我约个维修」→ BOOK；「取消预约」
+> → CANCEL，CANCEL 先判且被动式「预约被取消了」不触发）+ LLM 二判目录兜底；
+> 语义层暂无训练样本（回流后补）。写操作过确认门（create_appointment /
+> cancel_appointment）。改期 v1=取消+重约（stage-39 需求遗留 2）。
+
 ### CHITCHAT 域（2）
 
 | 意图码 | 描述 | 风险 | 优先级 |

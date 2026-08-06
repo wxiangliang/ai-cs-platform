@@ -61,6 +61,17 @@ class SlotExtractor:
         if compare_items:
             slots["compare_items"] = compare_items
 
+        # —— Stage 39 预约槽位 ——
+        service_type = self._first_group(patterns.SERVICE_TYPE_RE, text)
+        if service_type:
+            slots["service_type"] = service_type
+        appointment_time = self._first_group(patterns.APPOINTMENT_TIME_RE, text)
+        if appointment_time:
+            slots["appointment_time"] = appointment_time.strip()
+        appointment_no = self._first_group(patterns.APPOINTMENT_NO_RE, text)
+        if appointment_no:
+            slots["appointment_no"] = appointment_no
+
         return slots
 
     def _extract_product_name(self, text: str) -> str | None:

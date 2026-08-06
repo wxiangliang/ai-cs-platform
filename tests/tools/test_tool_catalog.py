@@ -23,7 +23,7 @@ def test_derived_whitelist_matches_declared_set():
     assert set(readonly_tool_descriptions()) == {
         "query_order", "query_logistics_track", "query_refund_policy",
         "query_shipping_policy", "query_product", "query_user_coupons",
-        "query_member_status",
+        "query_member_status", "query_appointment_slots",
     }
     assert READONLY_TOOLS == readonly_tool_descriptions()
 

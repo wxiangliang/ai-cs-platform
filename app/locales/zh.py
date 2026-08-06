@@ -42,6 +42,8 @@ TABLE: dict[str, str] = {
     "event.refund_status": "您好，您的订单 {order_id} 退款状态有更新：{status}。如有疑问随时回复咨询。",
     "event.back_in_stock": "好消息！您关注的「{product_name}」已经到货，现在下单可尽快安排发货～",
     "event.coupon_expiring": "提醒您：您有一张优惠券即将到期（{expire}），记得在有效期内使用哦。",
+    "event.appointment_reminder": "提醒您：您预约的「{service_type}」服务即将开始（{appointment_time}，预约号 {appointment_no}）。师傅会提前电话联系您，请保持电话畅通；如需变更请回复「取消预约」后重新预约。",
+    "event.appointment_missed": "您好，您预约的「{service_type}」服务（预约号 {appointment_no}）未能如约进行。如仍需要服务，回复「预约{service_type}」即可重新安排，给您带来不便非常抱歉。",
     # —— Stage 35 身份核验 ——
     "identity.verify_required": "为保障您的账户安全，这项操作需要先核实身份。我已为您转接人工客服协助核实，请稍候；核实通过后即可继续办理。",
     # —— Stage 31 主动服务 ——

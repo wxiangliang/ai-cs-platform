@@ -70,6 +70,67 @@ def register_member_data(tenant_id: str, user_id: str, phone: str) -> dict[str, 
     return {"ticket_no": member_no, "member_no": member_no, "phone": phone}
 
 
+# —— Stage 39 预约 mock：进程内资源池与预约表。
+# APPOINTMENTS: appointment_no → 记录；SLOT_USAGE: (tenant, type, time) → 占用数
+APPOINTMENTS: dict[str, dict[str, Any]] = {}
+SLOT_USAGE: dict[str, int] = {}
+SLOT_CAPACITY = 3
+
+
+def _slot_key(tenant_id: str, service_type: str, time_text: str) -> str:
+    return f"{tenant_id}|{service_type}|{''.join((time_text or '').split())}"
+
+
+def appointment_slots_data(tenant_id: str, service_type: str) -> dict[str, Any]:
+    """可用时间槽假数据（确定性三段）。"""
+    return {
+        "service_type": service_type,
+        "available_slots": ["明天上午 9:00-12:00", "明天下午 14:00-18:00", "后天上午 9:00-12:00"],
+        "timezone": "Asia/Shanghai（北京时间）",
+    }
+
+
+def create_appointment_data(
+    tenant_id: str, service_type: str, appointment_time: str, phone: str
+) -> dict[str, Any]:
+    """创建预约：幂等（同 phone+类型+时间同号）+ 容量 3 原子扣减 + 过期拒绝。
+
+    返回 dict；不可约时抛 ValueError(error_code)——provider 转 ToolResult 失败。
+    """
+    time_text = (appointment_time or "").strip()
+    if "昨天" in time_text or "上周" in time_text:
+        raise ValueError("SLOT_EXPIRED")
+    idem_key = _digest(tenant_id, "appointment", phone, service_type, time_text)
+    existing_no = f"AP{idem_key[:10].upper()}"
+    if existing_no in APPOINTMENTS:
+        return {**APPOINTMENTS[existing_no], "idempotent": True}
+    slot = _slot_key(tenant_id, service_type, time_text)
+    if SLOT_USAGE.get(slot, 0) >= SLOT_CAPACITY:
+        raise ValueError("SLOT_FULL")
+    SLOT_USAGE[slot] = SLOT_USAGE.get(slot, 0) + 1
+    record = {
+        "ticket_no": existing_no,  # 回执号=预约号（action 回执通道复用）
+        "appointment_no": existing_no,
+        "service_type": service_type,
+        "appointment_time": f"{time_text}（北京时间）",
+        "phone": phone,
+    }
+    APPOINTMENTS[existing_no] = record
+    return record
+
+
+def cancel_appointment_data(tenant_id: str, appointment_no: str) -> dict[str, Any]:
+    """取消预约：释放槽位；号不存在抛 APPOINTMENT_NOT_FOUND。"""
+    record = APPOINTMENTS.pop(appointment_no, None)
+    if record is None:
+        raise ValueError("APPOINTMENT_NOT_FOUND")
+    slot = _slot_key(tenant_id, record["service_type"],
+                     record["appointment_time"].replace("（北京时间）", ""))
+    if SLOT_USAGE.get(slot, 0) > 0:
+        SLOT_USAGE[slot] -= 1
+    return {"ticket_no": appointment_no, "appointment_no": appointment_no, "cancelled": True}
+
+
 def ticket_data(tenant_id: str, tool_id: str, order_id: str) -> dict[str, Any]:
     """写操作工单假数据。"""
     seed = _digest(tenant_id, tool_id, order_id)

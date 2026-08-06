@@ -75,6 +75,18 @@ CATEGORY_WORDS = (
 )
 CATEGORY_RE = re.compile(rf"({'|'.join(CATEGORY_WORDS)})")
 
+# —— Stage 39 预约槽位 ——
+SERVICE_TYPE_WORDS = ("退货上门", "上门取件", "安装", "维修", "取件", "回访", "演示")
+SERVICE_TYPE_RE = re.compile(rf"({'|'.join(SERVICE_TYPE_WORDS)})")
+# 时间表达（弱规则：日期词/星期 + 时段/钟点，任一即可；归一化交 mock/真实系统）
+APPOINTMENT_TIME_RE = re.compile(
+    r"((?:今天|明天|后天|周[一二三四五六日天]|星期[一二三四五六日天]|\d{1,2}月\d{1,2}[日号])"
+    r"\s*(?:上午|下午|晚上|中午)?(?:\s*\d{1,2}[:点]\d{0,2}分?)?"
+    r"|(?:上午|下午|晚上|中午)\s*\d{1,2}[:点]\d{0,2}分?)"
+)
+# 预约号：AP 前缀 + 6~18 位字母数字
+APPOINTMENT_NO_RE = re.compile(r"(?<![A-Za-z0-9])(AP[A-Za-z0-9]{6,18})(?![A-Za-z0-9])")
+
 # 对比意图的两款商品：「A和B」「A跟B」「A vs B」（左侧非贪婪，节点/抽取器再剥噪声）
 COMPARE_ITEMS_RE = re.compile(
     r"([一-龥A-Za-z0-9·\- ]{2,20}?)\s*(?:和|跟|与|vs|VS)\s*([一-龥A-Za-z0-9·\- ]{2,20})"

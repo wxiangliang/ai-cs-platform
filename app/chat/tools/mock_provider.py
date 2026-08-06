@@ -35,6 +35,11 @@ class MockToolProvider:
         except KeyError:
             return ToolResult(ok=False, error_code="TOOL_NOT_FOUND",
                               latency_ms=round((time.perf_counter() - start) * 1000, 2))
+        except ValueError as exc:
+            # 业务性失败（Stage 39 预约：SLOT_FULL/SLOT_EXPIRED/NOT_FOUND）——
+            # error_code 即异常消息，走既有执行失败分支
+            return ToolResult(ok=False, error_code=str(exc) or "TOOL_ERROR",
+                              latency_ms=round((time.perf_counter() - start) * 1000, 2))
         return ToolResult(ok=True, data=data,
                           latency_ms=round((time.perf_counter() - start) * 1000, 2))
 
@@ -63,6 +68,21 @@ class MockToolProvider:
             "cancel_order", "update_order_address",
         ):
             return mock_data.ticket_data(tenant_id, tool_id, order_id)
+        if tool_id == "query_appointment_slots":
+            return mock_data.appointment_slots_data(
+                tenant_id, str(params.get("service_type") or "")
+            )
+        if tool_id == "create_appointment":
+            return mock_data.create_appointment_data(
+                tenant_id,
+                str(params.get("service_type") or ""),
+                str(params.get("appointment_time") or ""),
+                str(params.get("phone") or ""),
+            )
+        if tool_id == "cancel_appointment":
+            return mock_data.cancel_appointment_data(
+                tenant_id, str(params.get("appointment_no") or "")
+            )
         if tool_id == "register_member":
             # 会员注册（Stage 33）：user_id 缺省用手机号兜底（mock 幂等按键）
             return mock_data.register_member_data(

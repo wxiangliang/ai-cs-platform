@@ -37,6 +37,9 @@ EVENT_RULES: dict[str, dict[str, Any]] = {
         "verify_param": "product_name",
     },
     "COUPON_EXPIRING": {"template": "event.coupon_expiring"},
+    # Stage 39 预约提醒/未到场（真实系统 Outbox 推送；提醒频控=事件幂等+退订继承）
+    "APPOINTMENT_REMINDER": {"template": "event.appointment_reminder"},
+    "APPOINTMENT_MISSED": {"template": "event.appointment_missed"},
 }
 
 _K_EVENT = "event:seen:{tenant}:{event_id}"
@@ -140,7 +143,10 @@ async def _process(
 
     # —— 组装消息（i18n 模板；参数=事件载荷 ∪ 重查事实，模板占位键缺失置空）——
     params: dict[str, str] = {
-        k: "" for k in ("order_id", "latest", "eta", "status", "product_name", "expire")
+        k: "" for k in (
+            "order_id", "latest", "eta", "status", "product_name", "expire",
+            "service_type", "appointment_time", "appointment_no",
+        )
     }
     params.update({k: str(v) for k, v in {**payload, **facts}.items()})
     params["entity_id"] = str(event.get("entity_id") or "")

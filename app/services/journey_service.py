@@ -28,6 +28,7 @@ _STRONG_TARGETS = {
     "ORDER.QUERY_STATUS": "PURCHASED",
     "LOGISTICS.": "PURCHASED",
     "AFTERSALE.": "PURCHASED",  # 有订单可售后=已购（风险另记 at_risk）
+    "APPOINTMENT.": "PURCHASED",  # 约安装/维修=已购（Stage 39）
 }
 # 弱证据（一次最多推进一格）
 _WEAK_TARGETS = {

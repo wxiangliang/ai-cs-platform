@@ -29,6 +29,18 @@ _CANCEL_ORDER_RE = re.compile(
     r"((?<![被已])取消.{0,4}(订单|这单|那单|单子))|((订单|这单|那单)[^被已]{0,4}取消)|(退订)"
 )
 
+# 预约（Stage 39，确定性触发——语义层无训练样本，规则层是主入口）：
+# CANCEL 先于 BOOK 判（「取消预约」含「预约」）；被动/完成式（「预约被取消了」）
+# 是状态咨询不触发（cancel-order 正则同款防误伤）
+_APPOINTMENT_CANCEL_RE = re.compile(
+    r"((?<![被已])取消.{0,4}预约)|(预约[^被已]{0,4}取消)"
+)
+_APPOINTMENT_BOOK_RE = re.compile(
+    r"(?:预约|帮我约|约个|约一下)\s*.{0,6}?(?:安装|维修|取件|上门|回访|演示|师傅|门店)"
+    r"|(?:安装|维修|取件|上门|回访|演示)\s*.{0,4}?预约"
+    r"|^(?:我要|帮我|想)?预约$"
+)
+
 # 会员注册（Stage 33，确定性触发——语义层无训练样本，规则层是主入口）：
 # 「注册/开通 + 会员」任意近邻顺序，或裸短句「注册」（NBA 建议话术引导
 # 用户显式回复「注册」）。两条防误伤（否定/第三方平台）见 _match_member_register
@@ -200,6 +212,22 @@ class RuleIntentClassifier:
                 pred_label=IntentLabel.META_DENY,
                 confidence=_CONFIRM_GATE_CONFIDENCE,
                 decision_source=DecisionSource.RULE_TASK_DENY,
+            )
+
+        # —— 预约（Stage 39）：CANCEL 先判（「取消预约」含「预约」）——
+        if _APPOINTMENT_CANCEL_RE.search(normalized):
+            return IntentResult(
+                pred_label=IntentLabel.APPOINTMENT_CANCEL,
+                confidence=_KEYWORD_CONFIDENCE,
+                decision_source=DecisionSource.RULE_KEYWORD,
+            )
+        if _APPOINTMENT_BOOK_RE.search(normalized) and not _MEMBER_NEGATION_RE.search(
+            normalized
+        ):
+            return IntentResult(
+                pred_label=IntentLabel.APPOINTMENT_BOOK,
+                confidence=_KEYWORD_CONFIDENCE,
+                decision_source=DecisionSource.RULE_KEYWORD,
             )
 
         # —— 会员注册（Stage 33）：置于确认门/任务否定之后（CONFIRMING 下
