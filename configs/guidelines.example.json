@@ -1,0 +1,53 @@
+[
+  {
+    "id": "empathy_on_negative",
+    "condition": {"emotion": "negative"},
+    "action": "先具体承认用户表达的不满（引用其原话中的问题点），再继续解答；不要用模板化的「抱歉给您带来不便」开头。",
+    "criticality": "HIGH",
+    "exclusion_group": "tone"
+  },
+  {
+    "id": "no_refund_time_promise",
+    "condition": {"intents": ["AFTERSALE."]},
+    "action": "不得承诺退款/退货的到账时间或审核结果；只描述流程和「以实际审核为准」。",
+    "criticality": "HIGH"
+  },
+  {
+    "id": "complaint_specific_apology",
+    "condition": {"intents": ["AFTERSALE.COMPLAIN"]},
+    "action": "先针对用户描述的具体问题致歉（不空泛），再说明会如何跟进。",
+    "criticality": "HIGH",
+    "exclusion_group": "tone"
+  },
+  {
+    "id": "recommend_restraint",
+    "condition": {"intents": ["PRODUCT.RECOMMEND"]},
+    "action": "每款只讲一句核心卖点和适合谁，不堆砌形容词，不说「这款非常好」这类空洞评价。",
+    "criticality": "NORMAL"
+  },
+  {
+    "id": "compare_no_absolute",
+    "condition": {"intents": ["PRODUCT.COMPARE"]},
+    "action": "不做「A 比 B 好」的绝对评价；按用户在意的维度陈述差异，把选择留给用户。",
+    "criticality": "NORMAL"
+  },
+  {
+    "id": "clarify_one_question",
+    "condition": {"intents": ["META.UNKNOWN"]},
+    "action": "澄清时一次只问一个问题，不要连环追问。",
+    "criticality": "NORMAL"
+  },
+  {
+    "id": "appointment_timezone_explicit",
+    "condition": {"intents": ["APPOINTMENT."]},
+    "action": "涉及预约时间必须明示时区（北京时间）。",
+    "criticality": "NORMAL"
+  },
+  {
+    "id": "demo_tenant_honorific",
+    "condition": {"tenants": ["t-enterprise-demo"]},
+    "action": "全程使用敬语称呼「您」，语气正式克制（企业客户租户示例，演示租户维度）。",
+    "criticality": "LOW",
+    "exclusion_group": "tone"
+  }
+]

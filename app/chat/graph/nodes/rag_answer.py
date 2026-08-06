@@ -79,11 +79,17 @@ async def rag_answer(state: GraphState, config: RunnableConfig) -> dict[str, Any
             "graph_trace": ["rag_answer:cache"],
         }
 
+    # Stage 40 行为准则：本轮命中块（未启用/无命中=None）
+    from app.chat.guidelines import guidelines_for_state
+
+    guide_block = guidelines_for_state(state)
+
     trace_dict: dict[str, Any] = {"query": retrieve_query, "refused": True}
     degraded = False
     try:
         answer, trace = await rag_answerer.answer(
-            session, tenant_id, retrieve_query, memory=state.get("memory"), query_vec=query_vec
+            session, tenant_id, retrieve_query, memory=state.get("memory"),
+            query_vec=query_vec, guidelines=guide_block,
         )
         trace_dict = trace.to_dict()
     except Exception:  # noqa: BLE001 - 知识库故障不打断主链路
@@ -138,6 +144,7 @@ async def rag_answer(state: GraphState, config: RunnableConfig) -> dict[str, Any
             state.get("memory"),
             state.get("locale"),
             mode_gate=intent_dict.get("mode_gate"),
+            guidelines=guide_block,
         )
         if question:
             trace_dict["clarify"] = True

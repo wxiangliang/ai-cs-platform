@@ -73,6 +73,11 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
     # 智能澄清（Stage 21）：意图不明轮次用 top_k 候选 + 近期对话生成针对性
     # 澄清问句替代固定模板；失败/无 Key 走原模板（零回归）。
     # 不过 polish——问句本身已是 LLM 输出，二次润色浪费且可能改坏选项
+    # Stage 40 行为准则：本轮命中块（未启用/无命中=None，下游零改动）
+    from app.chat.guidelines import guidelines_for_state
+
+    guide_block = guidelines_for_state(state)
+
     if status == TurnStatus.FALLBACK and final_intent == IntentLabel.META_UNKNOWN:
         from app.chat.skills.llm_clarifier import generate_clarify_question
 
@@ -82,6 +87,7 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
             state.get("memory"),
             locale,
             mode_gate=intent_dict.get("mode_gate"),
+            guidelines=guide_block,
         )
         if question:
             return {"reply": question, "graph_trace": ["response_generate:clarify"]}
@@ -176,6 +182,7 @@ async def response_generate(state: GraphState) -> dict[str, Any]:
         state.get("normalized_text", ""),
         memory=state.get("memory"),
         soften=state.get("emotion") == "negative",
+        guidelines=guide_block,
     )
     return {
         "reply": reply,

@@ -106,6 +106,7 @@ class RagAnswerer:
         query: str,
         memory: dict | None = None,
         query_vec: list[float] | None = None,
+        guidelines: str | None = None,
     ) -> tuple[RagAnswer | None, RetrievalTrace]:
         """尝试用知识库回答。
 
@@ -158,7 +159,7 @@ class RagAnswerer:
         # 单测路径（检索层已打桩）跳过
         if session is not None:
             await session.commit()
-        reply = await self._generate(query, hits, memory=memory)
+        reply = await self._generate(query, hits, memory=memory, guidelines=guidelines)
         if reply is not None:
             # 引用溯源（WeKnora 对齐）：从模型输出解析 [n] 编号映射回命中块，
             # citations 只列真正被引用的文档（解析不到则回退全部命中）
@@ -196,7 +197,12 @@ class RagAnswerer:
         return RagAnswer(reply=reply, source="rag_extract", citations=citations, trace=trace), trace
 
     @staticmethod
-    async def _generate(query: str, hits: list[Hit], memory: dict | None = None) -> str | None:
+    async def _generate(
+        query: str,
+        hits: list[Hit],
+        memory: dict | None = None,
+        guidelines: str | None = None,
+    ) -> str | None:
         """LLM 生成（无 Key / 预算耗尽 / 调用失败返回 None，走摘录降级）。
 
         统一走 factory.chat_completion(purpose="rag")（延迟/可观测修复）：
@@ -213,8 +219,12 @@ class RagAnswerer:
         facts = (memory or {}).get("long_term_facts") or []
         facts_text = ("已知用户信息（仅供表达贴合）：" + "；".join(facts[:5]) + "\n") if facts else ""
         t0 = time.perf_counter()
+        # Stage 40 行为准则注入（准则=「应该怎样」的引导；红线仍在 system 硬约束）
+        system = (
+            f"{_RAG_SYSTEM_PROMPT}\n\n{guidelines}" if guidelines else _RAG_SYSTEM_PROMPT
+        )
         text = await chat_completion(
-            _RAG_SYSTEM_PROMPT,
+            system,
             f"{facts_text}资料：\n{context}\n\n用户问题：\n{wrap_user_input(query)}",
             purpose="rag",
         )

@@ -36,6 +36,7 @@ async def polish_reply(
     user_message: str,
     memory: dict | None = None,
     soften: bool = False,
+    guidelines: str | None = None,
 ) -> str:
     """润色回复底稿；不满足条件或任何异常时原样返回底稿。
 
@@ -60,6 +61,9 @@ async def polish_reply(
         long_term_facts=memory.get("long_term_facts", []),
         soften=soften,
     )
+    # Stage 40 行为准则注入（每轮只注入命中的少数几条，engine 封顶）
+    if guidelines:
+        system = f"{system}\n\n{guidelines}"
     polished = await chat_completion(system, user, purpose="generate")
     if not polished:
         return draft

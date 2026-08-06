@@ -244,7 +244,7 @@ async def test_rag_answer_personalized_flag():
     async def _hits(session, tenant_id, query, trace, query_vec=None):
         return [hit]
 
-    async def _gen(query, hits, memory=None):
+    async def _gen(query, hits, memory=None, guidelines=None):
         return "生成的回答"
 
     import unittest.mock as mock

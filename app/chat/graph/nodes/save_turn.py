@@ -382,12 +382,17 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
     log_retrieval = dict(state.get("retrieval") or {})
     if handoff_info:
         log_retrieval["handoff"] = handoff_info
+    # Stage 40：本轮命中的行为准则 id（收集器 drain，未启用为空列表）
+    from app.chat.guidelines import drain_matched_guidelines
+
+    matched_guidelines = drain_matched_guidelines()
     log_state = {
         **state,
         "retrieval": log_retrieval or None,
         "user_message_id": user_msg.id,
         "latency": latency,
         "proactive": proactive,
+        "guidelines": matched_guidelines or None,
     }
     await decision_logger.save(session, build_log_data(log_state))
 

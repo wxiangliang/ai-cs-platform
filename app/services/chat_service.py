@@ -81,6 +81,10 @@ class ChatService:
         from app.core.identity import set_identity_level
 
         set_identity_level(authenticated=settings.AUTH_ENABLED)
+        # 行为准则命中收集器（Stage 40）：turn 级清零，save_turn 落决策日志
+        from app.chat.guidelines import reset_matched_guidelines
+
+        reset_matched_guidelines()
         # 轮级 LLM 时间预算（容量修复）：本轮所有 LLM 调用共享 deadline，
         # 耗尽后各调用点走既有降级路径（与无 Key 同路径），单轮时长有界
         start_turn_budget()

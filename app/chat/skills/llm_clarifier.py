@@ -55,6 +55,7 @@ async def generate_clarify_question(
     memory: dict | None,
     locale: str | None = None,
     mode_gate: dict | None = None,
+    guidelines: str | None = None,
 ) -> str | None:
     """生成针对性澄清问句；不满足条件/失败返回 None（调用方走固定模板）。
 
@@ -83,8 +84,10 @@ async def generate_clarify_question(
     recent = (memory or {}).get("recent_turns") or []
     turns = "\n".join(f"{role}: {content}" for role, content in list(recent)[-8:])
     context_part = f"最近对话：\n{turns}\n\n" if turns else ""
+    # Stage 40 行为准则注入（如「澄清一次只问一个问题」）
+    system = f"{_CLARIFY_SYSTEM}\n\n{guidelines}" if guidelines else _CLARIFY_SYSTEM
     raw = await chat_completion(
-        _CLARIFY_SYSTEM,
+        system,
         f"{context_part}候选方向：\n{options}\n\n用户消息：{wrap_user_input(user_text)}",
         purpose="classify",
     )

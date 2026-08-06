@@ -25,3 +25,4 @@ data/export/
 # Claude Code 本地会话配置
 .claude/
 configs/campaigns.json
+configs/guidelines.json

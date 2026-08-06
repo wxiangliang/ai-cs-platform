@@ -303,6 +303,14 @@ class Settings(BaseSettings):
     PROACTIVE_ONBOARDING_ENABLED: bool = True
     PROACTIVE_ONBOARDING_MAX: int = 2
 
+    # ----- Stage 40 行为准则层（借鉴 Parlant，评估见 docs/architecture/parlant_evaluation.md）-----
+    # 准则=「应该怎样」的引导（护栏管「绝不允许」）；只注入润色/RAG/澄清等
+    # LLM 增强路径；v1 全规则匹配零 LLM 成本。默认关=零回归
+    GUIDELINES_ENABLED: bool = False
+    GUIDELINES_CONFIG_PATH: str = "configs/guidelines.json"
+    # 注入条数封顶（防重蹈系统提示词膨胀——Parlant 教训的硬闸）
+    GUIDELINES_MAX_INJECT: int = 3
+
     # ----- Stage 36 事件驱动主动客服 -----
     # 业务事件（POST /api/events）→ 幂等/退订/静默/重查最新事实 → 主动消息。
     # 默认关=零回归；静默时间如 "22-8"（跨零点），空=不启用

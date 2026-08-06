@@ -194,7 +194,7 @@ Skill Loader 为双源合并、挂起任务自动恢复+续办提示、新增上
 | Lead / CRM | 真实销售团队 | 选品顾问的 category/budget 槽位已是 Lead 种子字段 |
 | 留存/流失挽回 Playbook | 真实生命周期数据 | 「售后未解决先恢复后营销」的精神已在 NBA 抑制矩阵 |
 | LLM 会话级质量评分 | 真实 LLM Key | 规则版 Scorecard（Stage 37）先行 |
-| 行为准则层（Guidelines v1，借鉴 Parlant） | 真实 LLM Key（无生成即无注入点价值） | 评估报告 `docs/architecture/parlant_evaluation.md`：condition-action 准则表数据化 + 规则匹配器 + 只注入 LLM 增强路径 + 命中留痕；**不引入 Parlant 框架**（两个大脑/成本模型冲突，报告第 5 节）；种子准则盘点可先行 |
+| ~~行为准则层（Guidelines v1，借鉴 Parlant）~~ → **Stage 40 ✅**（2026-08-06 已实现） | 效果验证待真实 LLM Key | 评估报告 `docs/architecture/parlant_evaluation.md` + 需求 `stage-40-guidelines/`；**不引入 Parlant 框架**（两个大脑/成本模型冲突，报告第 5 节） |
 
 ### 已覆盖（评审提及但不用重做）
 

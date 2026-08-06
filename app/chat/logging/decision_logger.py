@@ -69,6 +69,7 @@ def build_log_data(state: dict[str, Any]) -> DecisionLogData:
             **({"guardrail": state["guardrail"]} if state.get("guardrail") else {}),
             **({"meta_shadow": state["meta_shadow"]} if state.get("meta_shadow") else {}),
             **({"proactive": state["proactive"]} if state.get("proactive") else {}),
+            **({"guidelines": state["guidelines"]} if state.get("guidelines") else {}),
         },
         latency_json=state.get("latency") or {},
         error_json=state.get("error"),
