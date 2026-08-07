@@ -303,6 +303,14 @@ class Settings(BaseSettings):
     PROACTIVE_ONBOARDING_ENABLED: bool = True
     PROACTIVE_ONBOARDING_MAX: int = 2
 
+    # ----- Stage 41 会话主动引导与建议闭环 -----
+    # 开场引导：会话创建时发一条轻量欢迎（受 PROACTIVE_ENABLED 总开关双关；
+    # 同客户 24h 至多一次，opt-out/at_risk 不发，Redis 故障 fail-closed 不发）
+    PROACTIVE_WELCOME_ENABLED: bool = False
+    WELCOME_CONFIG_PATH: str = "configs/welcome.json"
+    # 服务延伸候选池（P4：onboarding 之后、营销活动之前；空/缺失=无延伸）
+    FOLLOWUP_CONFIG_PATH: str = "configs/followups.json"
+
     # ----- Stage 40 行为准则层（借鉴 Parlant，评估见 docs/architecture/parlant_evaluation.md）-----
     # 准则=「应该怎样」的引导（护栏管「绝不允许」）；只注入润色/RAG/澄清等
     # LLM 增强路径；v1 全规则匹配零 LLM 成本。默认关=零回归

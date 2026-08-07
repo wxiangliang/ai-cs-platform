@@ -22,6 +22,11 @@ TABLE: dict[str, str] = {
     # Stage 31 proactive service
     "proactive.campaign_mention": "\nBy the way, {hook}. Feel free to ignore this, or reply \"no recommendations\" to opt out.",
     "proactive.onboarding_mention": "\nBy the way, you haven't registered as a member yet — reply \"register\" and I'll set it up in a minute. Feel free to ignore this, or reply \"no recommendations\" to opt out.",
+    # Stage 41 conversation director
+    "proactive.welcome": "Hi, I'm the store assistant. I can help you check orders and logistics, handle returns, exchanges and refunds, or answer product and policy questions. How can I help?",
+    "proactive.welcome.purchased": "Welcome back! I can help you check orders, track logistics or handle after-sales — just tell me what you need.",
+    "proactive.followup.logistics": "\nIf you like, I can also check the shipping status of this order — just reply \"track it\" or \"OK\".",
+    "proactive.followup.ask_price": "\nIf you like, I can look up the latest prices for these models — just reply \"OK\".",
     # Stage 30 conversation mode gate
     "mode.social_resume": "\nYour \"{name}\" request is still in progress — just send the required info to continue.",
     "mode.oos_boundary": "That's outside what I can help with as customer service. I can check orders and shipping, handle returns/refunds, or answer product and policy questions.",

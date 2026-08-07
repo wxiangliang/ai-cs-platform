@@ -49,6 +49,11 @@ TABLE: dict[str, str] = {
     # —— Stage 31 主动服务 ——
     "proactive.campaign_mention": "\n对了，{hook}。如不感兴趣可以忽略，回复「不用推荐」以后就不再提啦。",
     "proactive.onboarding_mention": "\n对了，您还没有开通本平台会员，回复「注册」我就可以帮您开通（一分钟搞定）。不需要的话忽略即可，回复「不用推荐」以后就不再提啦。",
+    # —— Stage 41 会话主动引导与建议闭环 ——
+    "proactive.welcome": "您好，我是本店智能客服～可以帮您查订单、查物流，办理退换货、退款等售后，也能解答商品和平台政策问题。请问有什么可以帮您？",
+    "proactive.welcome.purchased": "您好，欢迎回来～我可以帮您查订单、查物流或办理售后，直接告诉我您的需求就可以。",
+    "proactive.followup.logistics": "\n如果需要，我还可以帮您查看这笔订单的物流进度，回复「查物流」或「好的」即可。",
+    "proactive.followup.ask_price": "\n需要的话我可以帮您查一下这几款的最新价格，回复「好的」即可。",
     # —— Stage 30 对话模式门 ——
     "mode.social_resume": "\n刚才的「{name}」还在办理中，继续提供所需信息就可以，随时可以继续～",
     "mode.oos_boundary": "这个请求超出了我能协助的客服业务范围哈。我可以帮您查订单、物流，办理退换货、退款等售后，或解答商品和平台政策问题～",

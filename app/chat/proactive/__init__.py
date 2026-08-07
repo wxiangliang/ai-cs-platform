@@ -1,4 +1,4 @@
-"""Stage 31 主动服务地基：Next Best Action（规则版）+ 活动引导。"""
+"""主动服务：Next Best Action（Stage 31）+ 开场引导/接受通道/服务延伸（Stage 41）。"""
 
 from app.chat.proactive.nba import decide_proactive
 

@@ -349,6 +349,10 @@ async def save_turn(state: GraphState, config: RunnableConfig) -> dict[str, Any]
                 # Stage 33：引导显式回复「注册」（确定性入口走规则层触发）
                 reply += t("proactive.onboarding_mention", locale)
                 count_proactive(action, "applied")
+            elif proactive.get("applied") and action == "SERVICE_FOLLOWUP" and proactive.get("suggest_key"):
+                # Stage 41：服务延伸建议（i18n 模板确定性文案，不经 LLM）
+                reply += t(proactive["suggest_key"], locale)
+                count_proactive(action, "applied")
             elif action != "NONE":
                 count_proactive(action or "NONE", "shadow")
             else:

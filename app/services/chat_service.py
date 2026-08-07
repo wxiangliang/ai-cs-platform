@@ -200,6 +200,11 @@ class ChatService:
             user_id=req.user_id,
             channel=req.channel,
         )
+        # —— Stage 41 开场引导（默认关）：用户还没说话时的轻量欢迎。
+        # 抑制/频控/旅程门控在 welcome 模块收口，任何失败不打断会话创建 ——
+        from app.chat.proactive.welcome import send_welcome_if_eligible
+
+        await send_welcome_if_eligible(session, tenant_id, record.id, req.user_id)
         return SessionData(
             session_id=record.id,
             tenant_id=record.tenant_id,

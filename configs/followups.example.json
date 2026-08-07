@@ -1,0 +1,18 @@
+[
+  {
+    "followup_id": "order_to_logistics",
+    "enabled": true,
+    "trigger_intents": ["ORDER.QUERY_STATUS"],
+    "suggest_key": "proactive.followup.logistics",
+    "accept_intent": "LOGISTICS.TRACK",
+    "max_per_customer": 3
+  },
+  {
+    "followup_id": "compare_to_price",
+    "enabled": true,
+    "trigger_intents": ["PRODUCT.COMPARE"],
+    "suggest_key": "proactive.followup.ask_price",
+    "accept_intent": "PRODUCT.ASK_PRICE",
+    "max_per_customer": 3
+  }
+]

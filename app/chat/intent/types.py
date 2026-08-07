@@ -58,6 +58,7 @@ class DecisionSource:
     RULE_PENDING_SLOT = "RULE_PENDING_SLOT"  # pending-slot 定向提取命中（Stage 26 补槽守护）
     RULE_CONFIRM_GATE = "RULE_CONFIRM_GATE"  # 确认门应答（CONFIRMING 状态下的确认/否认）
     RULE_TASK_DENY = "RULE_TASK_DENY"  # 任务中途否定（COLLECTING 状态，Stage 23 方向纠偏）
+    RULE_PROACTIVE_ACCEPT = "RULE_PROACTIVE_ACCEPT"  # 主动建议接受（Stage 41：窗口内纯接受短句按 accept_intent 开任务）
     RULE_FALLBACK = "RULE_FALLBACK"  # 兜底未知
     # —— SetFit 语义层（Stage 04-02）——
     SETFIT = "SETFIT"  # SetFit 模型高置信命中
@@ -96,6 +97,8 @@ class IntentResult:
     # Stage 30：对话模式门证据 {mode, score, margin, accepted, reason_codes}
     # ——接管轮（MODE_SOCIAL）与影子轮都带，观测/回流共用
     mode_gate: dict[str, Any] | None = None
+    # Stage 41：主动建议接受证据 {action, id, accept_intent}（窗口 payload 摘要）
+    proactive_accept: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转为可落库的 dict（用于 decision_log.intent_result_json）。"""
@@ -114,4 +117,6 @@ class IntentResult:
             result["example_knn"] = self.example_knn
         if self.mode_gate is not None:
             result["mode_gate"] = self.mode_gate
+        if self.proactive_accept is not None:
+            result["proactive_accept"] = self.proactive_accept
         return result

@@ -1,0 +1,13 @@
+[
+  {
+    "welcome_id": "purchased_service",
+    "enabled": true,
+    "eligible_journey_stages": ["PURCHASED"],
+    "hook_key": "proactive.welcome.purchased"
+  },
+  {
+    "welcome_id": "default",
+    "enabled": true,
+    "hook_key": "proactive.welcome"
+  }
+]

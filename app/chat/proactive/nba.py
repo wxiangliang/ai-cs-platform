@@ -18,8 +18,9 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from app.chat.intent.types import DecisionSource
+from app.chat.intent.types import DecisionSource, IntentLabel
 from app.chat.proactive.campaigns import select_campaign
+from app.chat.proactive.followups import intent_registered, select_followup
 from app.chat.state.types import TurnStatus
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -28,7 +29,16 @@ logger = get_logger(__name__)
 
 ACTION_CAMPAIGN = "MENTION_CAMPAIGN"
 ACTION_ONBOARDING = "START_ONBOARDING"  # Stage 33：建议未注册用户开通会员
+ACTION_FOLLOWUP = "SERVICE_FOLLOWUP"  # Stage 41：任务完成后的服务延伸建议
 ACTION_NONE = "NONE"
+
+# 候选优先级阶梯（Stage 41 需求第 3.3 节，_decide 内按此顺序短路选取；
+# P0 安全合规=护栏、P1 服务优先=抑制矩阵是结构性前置，不进候选）：
+#   P2 必要后续 —— 暂无候选源，留位（物流异常→催件建议，随真实工具）
+#   P3 START_ONBOARDING（获客，Stage 33）
+#   P4 SERVICE_FOLLOWUP（服务延伸，Stage 41）
+#   P5 MENTION_CAMPAIGN（营销活动，Stage 31）
+# 高层级有候选即胜出，全轮仍然至多一个动作。
 
 # onboarding 频控复用 impression 键的伪活动名（客户级建议上限）
 _ONBOARDING_KEY = "onboarding"
@@ -132,11 +142,39 @@ async def _decide(state: Mapping[str, Any], db: Any = None) -> dict[str, Any]:
         if not capped and await _member_unregistered(tenant, user_id):
             applied = bool(settings.PROACTIVE_APPLY)
             if applied:
-                await _record_impression(tenant, session_id, user, _ONBOARDING_KEY)
+                # 接受通道（Stage 41）：话术引导「注册」仍是主入口，
+                # 「好的/可以」类纯接受经窗口 payload 同样能开出注册任务
+                await _record_impression(
+                    tenant, session_id, user, _ONBOARDING_KEY,
+                    offer={"action": ACTION_ONBOARDING, "id": _ONBOARDING_KEY,
+                           "accept_intent": IntentLabel.MEMBER_REGISTER},
+                )
             return {
                 "action": ACTION_ONBOARDING,
                 "applied": applied,
                 "reason_codes": ["unregistered_user", f"intent:{intent}"],
+            }
+
+    # —— P4 服务延伸（Stage 41）：与刚完成任务高度相关的服务型建议，
+    # 优先于营销活动；抑制矩阵/频控与营销完全同一张表（保守起步，
+    # 放宽进遗留）。客户×延伸频控复用 impression 键 ——
+    followup = select_followup(intent)
+    if followup is not None:
+        cap = int(followup.get("max_per_customer") or 0)
+        if not (cap and await _impressions(tenant, user, followup["followup_id"]) >= cap):
+            applied = bool(settings.PROACTIVE_APPLY)
+            if applied:
+                await _record_impression(
+                    tenant, session_id, user, followup["followup_id"],
+                    offer={"action": ACTION_FOLLOWUP, "id": followup["followup_id"],
+                           "accept_intent": str(followup.get("accept_intent") or "")},
+                )
+            return {
+                "action": ACTION_FOLLOWUP,
+                "followup_id": followup["followup_id"],
+                "suggest_key": str(followup.get("suggest_key") or ""),
+                "applied": applied,
+                "reason_codes": ["followup", f"intent:{intent}"],
             }
 
     # —— Stage 38：旅程阶段（活动 eligible_journey_stages 门控 + 决策证据）——
@@ -174,7 +212,14 @@ async def _decide(state: Mapping[str, Any], db: Any = None) -> dict[str, Any]:
         ],
     }
     if applied:
-        await _record_impression(tenant, session_id, user, campaign["campaign_id"])
+        # 活动可选声明 accept_intent（Stage 41 接受通道）；未声明或未注册
+        # 则窗口不带 accept_intent——「好的」不会开出任何任务（窗口仅供拒绝检测）
+        accept = str(campaign.get("accept_intent") or "")
+        await _record_impression(
+            tenant, session_id, user, campaign["campaign_id"],
+            offer={"action": ACTION_CAMPAIGN, "id": campaign["campaign_id"],
+                   "accept_intent": accept if intent_registered(accept) else ""},
+        )
     return decision
 
 
@@ -252,9 +297,22 @@ async def _impressions(tenant: str, user: str, campaign_id: str) -> int:
         return 10**9
 
 
-async def _record_impression(tenant: str, session_id: str, user: str, campaign_id: str) -> None:
-    """真实展示后记账：会话计数（1 天）/客户×活动计数（30 天）/上轮标记（10 分钟）。"""
+async def _record_impression(
+    tenant: str,
+    session_id: str,
+    user: str,
+    campaign_id: str,
+    offer: dict[str, Any] | None = None,
+) -> None:
+    """真实展示后记账：会话计数（1 天）/客户×活动计数（30 天）/上轮标记（10 分钟）。
+
+    Stage 41：上轮标记从裸 campaign_id 升级为 JSON payload
+    {action, id, accept_intent}——同一个 10 分钟窗口双向复用：
+    拒绝检测只看键存在（不变），接受通道读 accept_intent 开任务。
+    """
     try:
+        import json
+
         from app.cache.redis_client import get_redis_client
 
         redis = get_redis_client()
@@ -265,7 +323,8 @@ async def _record_impression(tenant: str, session_id: str, user: str, campaign_i
         pipe.expire(key_sess, 86400)
         pipe.incr(key_imp)
         pipe.expire(key_imp, 30 * 86400)
-        pipe.set(_K_LAST.format(tenant=tenant, session=session_id), campaign_id, ex=600)
+        payload = json.dumps(offer or {"id": campaign_id}, ensure_ascii=False)
+        pipe.set(_K_LAST.format(tenant=tenant, session=session_id), payload, ex=600)
         await pipe.execute()
     except Exception:  # noqa: BLE001 - 记账失败只影响频控精度，不打断回复
         logger.warning("proactive impression record failed", exc_info=True)
